@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from app import app, db
 from models import Market, Weather, User
 from weather_api import KMAWeatherAPI, convert_to_grid
-from fcm_utils import weather_notification_service
+from fcm_integration.fcm_utils import weather_notification_service
 
 # 환경변수 로드
 load_dotenv()

@@ -9,7 +9,7 @@ FCM (Firebase Cloud Messaging) 유틸리티
 import logging
 from typing import List, Dict, Optional, Union
 from firebase_admin import messaging
-from firebase_config import get_firebase_app, is_firebase_available
+from fcm_integration.firebase_config import get_firebase_app, is_firebase_available
 from models import User
 from database import db
 

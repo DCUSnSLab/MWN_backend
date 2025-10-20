@@ -275,7 +275,7 @@ def fcm_settings():
 def test_fcm_notification():
     """FCM 테스트 알림 전송"""
     from auth_utils import login_required
-    from fcm_utils import fcm_service
+    from fcm_integration.fcm_utils import fcm_service
     
     @login_required
     def _test_fcm_notification(current_user):
@@ -307,7 +307,7 @@ def test_fcm_notification():
 @app.route('/api/admin/fcm/send', methods=['POST'])
 def admin_send_fcm():
     """관리자용 FCM 알림 전송"""
-    from fcm_utils import fcm_service
+    from fcm_integration.fcm_utils import fcm_service
     from models import User
     
     data = request.get_json()
