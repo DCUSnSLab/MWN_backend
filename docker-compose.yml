@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  web:
+    image: harbor.cu.ac.kr/mwn/backend:latest
+    container_name: mwn_backend
+    ports:
+      - "8002:8002"
+    volumes:
+      # Mount instance directory to persist SQLite database
+      - ./instance:/app/instance
+      # Mount logs
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - FLASK_APP=app.py
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    command: python app.py
