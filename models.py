@@ -18,6 +18,12 @@ class User(db.Model):
     email_verified = db.Column(db.Boolean, default=False)
     last_login = db.Column(db.DateTime)
     
+    # FCM 관련 필드들
+    fcm_token = db.Column(db.Text)  # FCM 등록 토큰
+    fcm_enabled = db.Column(db.Boolean, default=True)  # FCM 알림 활성화 여부
+    fcm_topics = db.Column(db.JSON)  # 구독한 FCM 주제들
+    device_info = db.Column(db.JSON)  # 기기 정보 (플랫폼, 버전 등)
+    
     def set_password(self, password):
         """패스워드를 해시화해서 저장"""
         self.password_hash = generate_password_hash(password)
@@ -39,7 +45,10 @@ class User(db.Model):
             'is_active': self.is_active,
             'email_verified': self.email_verified,
             'last_login': self.last_login.isoformat() if self.last_login else None,
-            'notification_preferences': self.notification_preferences
+            'notification_preferences': self.notification_preferences,
+            'fcm_enabled': self.fcm_enabled,
+            'fcm_topics': self.fcm_topics,
+            'device_info': self.device_info
         }
         
         # 민감한 정보는 관리자만 볼 수 있도록
@@ -56,6 +65,43 @@ class User(db.Model):
             'location': self.location,
             'is_active': self.is_active
         }
+    
+    def update_fcm_token(self, token, device_info=None):
+        """FCM 토큰 업데이트"""
+        self.fcm_token = token
+        if device_info:
+            self.device_info = device_info
+        self.updated_at = datetime.utcnow()
+    
+    def subscribe_to_topic(self, topic):
+        """FCM 주제 구독"""
+        if not self.fcm_topics:
+            self.fcm_topics = []
+        if topic not in self.fcm_topics:
+            self.fcm_topics.append(topic)
+            self.updated_at = datetime.utcnow()
+    
+    def unsubscribe_from_topic(self, topic):
+        """FCM 주제 구독 해제"""
+        if self.fcm_topics and topic in self.fcm_topics:
+            self.fcm_topics.remove(topic)
+            self.updated_at = datetime.utcnow()
+    
+    def enable_fcm(self):
+        """FCM 알림 활성화"""
+        self.fcm_enabled = True
+        self.updated_at = datetime.utcnow()
+    
+    def disable_fcm(self):
+        """FCM 알림 비활성화"""
+        self.fcm_enabled = False
+        self.updated_at = datetime.utcnow()
+    
+    def can_receive_fcm(self):
+        """FCM 알림 수신 가능 여부"""
+        return (self.is_active and 
+                self.fcm_enabled and 
+                self.fcm_token is not None)
 
 class Market(db.Model):
     __tablename__ = 'markets'

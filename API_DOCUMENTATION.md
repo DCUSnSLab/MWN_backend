@@ -431,15 +431,142 @@ POST /api/scheduler/collect
 
 ---
 
+### 📱 FCM (푸시 알림) 관리
+
+#### 19. FCM 토큰 등록/업데이트 (인증 필요)
+```http
+POST /api/fcm/register
+Authorization: Bearer {access_token}
+```
+
+**요청**:
+```json
+{
+    "token": "FCM_REGISTRATION_TOKEN",
+    "device_info": {
+        "platform": "web",
+        "browser": "Chrome 119.0.0.0",
+        "timestamp": "2025-10-19T13:00:00Z"
+    },
+    "subscribe_topics": ["weather_alerts", "severe_weather"]
+}
+```
+
+**응답**:
+```json
+{
+    "message": "FCM 토큰이 등록되었습니다.",
+    "fcm_enabled": true,
+    "subscribed_topics": ["weather_alerts", "severe_weather"]
+}
+```
+
+#### 20. FCM 설정 조회/업데이트 (인증 필요)
+```http
+GET /api/fcm/settings
+POST /api/fcm/settings
+Authorization: Bearer {access_token}
+```
+
+**GET 응답**:
+```json
+{
+    "fcm_enabled": true,
+    "fcm_topics": ["weather_alerts", "severe_weather"],
+    "device_info": {
+        "platform": "web",
+        "browser": "Chrome 119.0.0.0"
+    },
+    "has_token": true
+}
+```
+
+**POST 요청** (설정 업데이트):
+```json
+{
+    "enabled": true,
+    "subscribe_topics": ["weather_alerts"],
+    "unsubscribe_topics": ["severe_weather"]
+}
+```
+
+#### 21. FCM 테스트 알림 전송 (인증 필요)
+```http
+POST /api/fcm/test
+Authorization: Bearer {access_token}
+```
+
+**응답**:
+```json
+{
+    "message": "테스트 알림이 전송되었습니다."
+}
+```
+
+#### 22. 관리자용 FCM 알림 전송
+```http
+POST /api/admin/fcm/send
+```
+
+**요청** (주제로 전송):
+```json
+{
+    "title": "기상 특보",
+    "body": "서울 지역에 호우 경보가 발령되었습니다.",
+    "topic": "severe_weather",
+    "data": {
+        "type": "severe_weather",
+        "location": "서울"
+    }
+}
+```
+
+**요청** (특정 사용자들에게 전송):
+```json
+{
+    "title": "날씨 알림",
+    "body": "내일 비가 예상됩니다.",
+    "user_ids": [1, 2, 3],
+    "data": {
+        "type": "weather_forecast"
+    }
+}
+```
+
+**요청** (전체 사용자에게 전송):
+```json
+{
+    "title": "전체 공지",
+    "body": "날씨 서비스가 업데이트되었습니다.",
+    "data": {
+        "type": "announcement"
+    }
+}
+```
+
+**응답**:
+```json
+{
+    "message": "전체 15명의 사용자에게 알림이 전송되었습니다.",
+    "result": {
+        "success_count": 14,
+        "failure_count": 1,
+        "failed_tokens": ["invalid_token_example"]
+    }
+}
+```
+
+---
+
 ### 🗄️ 데이터베이스 뷰어
 
-#### 19. 웹 데이터베이스 뷰어
+#### 23. 웹 데이터베이스 뷰어
 ```http
 GET /db-viewer
 ```
 **설명**: 브라우저에서 데이터베이스 내용을 확인할 수 있는 웹 인터페이스
 
-#### 20. 데이터베이스 API들
+#### 24. 데이터베이스 API들
 ```http
 GET /db-viewer/api/stats     # 통계
 GET /db-viewer/api/users     # 사용자 데이터
@@ -484,6 +611,21 @@ curl -X POST http://localhost:8002/api/scheduler/start
 
 # 날씨 통계 조회
 curl http://localhost:8002/api/scheduler/stats
+
+# FCM 토큰 등록 (인증 필요)
+curl -X POST http://localhost:8002/api/fcm/register \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"token": "FCM_TOKEN", "device_info": {"platform": "web"}}'
+
+# FCM 테스트 알림 전송 (인증 필요)
+curl -X POST http://localhost:8002/api/fcm/test \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 관리자용 전체 FCM 알림 전송
+curl -X POST http://localhost:8002/api/admin/fcm/send \
+  -H "Content-Type: application/json" \
+  -d '{"title": "기상 특보", "body": "호우 경보 발령"}'
 ```
 
 ### 2. JavaScript/Fetch로 호출
@@ -535,6 +677,30 @@ fetch('http://localhost:8002/api/weather/current', {
 })
 .then(response => response.json())
 .then(data => console.log(data));
+
+// FCM 토큰 등록
+fetch('http://localhost:8002/api/fcm/register', {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`
+  },
+  body: JSON.stringify({
+    token: 'FCM_REGISTRATION_TOKEN',
+    device_info: { platform: 'web', browser: 'Chrome' },
+    subscribe_topics: ['weather_alerts']
+  })
+})
+.then(response => response.json())
+.then(data => console.log(data));
+
+// FCM 테스트 알림
+fetch('http://localhost:8002/api/fcm/test', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${accessToken}` }
+})
+.then(response => response.json())
+.then(data => console.log(data));
 ```
 
 ### 3. Python requests로 호출
@@ -580,6 +746,21 @@ weather_data = {
 response = requests.post('http://localhost:8002/api/weather/current', 
                         json=weather_data)
 weather = response.json()
+
+# FCM 토큰 등록
+fcm_data = {
+    "token": "FCM_REGISTRATION_TOKEN",
+    "device_info": {"platform": "python", "version": "3.9"},
+    "subscribe_topics": ["weather_alerts"]
+}
+fcm_response = requests.post('http://localhost:8002/api/fcm/register',
+                            json=fcm_data, headers=headers)
+fcm_result = fcm_response.json()
+
+# FCM 테스트 알림
+test_response = requests.post('http://localhost:8002/api/fcm/test',
+                             headers=headers)
+test_result = test_response.json()
 ```
 
 ---
@@ -600,6 +781,15 @@ weather = response.json()
 4. **Rate Limit**: 기상청 API 호출 제한이 있으므로 너무 자주 호출하지 마세요
 
 5. **에러 처리**: 모든 API는 실패 시 `{"error": "메시지"}` 형태로 응답합니다
+
+6. **FCM 설정**: 
+   - Firebase 프로젝트 설정 및 서비스 계정 키가 필요합니다
+   - 환경변수 `FIREBASE_SERVICE_ACCOUNT_KEY` 또는 `FIREBASE_SERVICE_ACCOUNT_JSON` 설정 필요
+   - 클라이언트별 FCM SDK 설정은 `client_fcm_config/` 디렉토리 참조
+
+7. **날씨 알림**: 
+   - 자동 스케줄러가 심각한 날씨 조건 감지 시 FCM 알림 자동 전송
+   - 폭염(35°C 이상), 한파(-10°C 이하), 호우(10mm/h 이상), 강풍(14m/s 이상) 조건
 
 ---
 

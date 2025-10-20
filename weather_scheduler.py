@@ -14,8 +14,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from app import app, db
-from models import Market, Weather
+from models import Market, Weather, User
 from weather_api import KMAWeatherAPI, convert_to_grid
+from fcm_utils import weather_notification_service
 
 # 환경변수 로드
 load_dotenv()
@@ -80,6 +81,9 @@ class WeatherScheduler:
                         if current_result['status'] == 'success':
                             logger.info(f"시장 '{market.name}': 현재 날씨 수집 성공")
                             success_count += 1
+                            
+                            # 날씨 알림 조건 확인 및 전송
+                            self._check_and_send_weather_alerts(market, current_result['data'])
                         else:
                             logger.error(f"시장 '{market.name}': 현재 날씨 수집 실패 - {current_result['message']}")
                             error_count += 1
@@ -178,6 +182,73 @@ class WeatherScheduler:
             except Exception as e:
                 logger.error(f"통계 조회 중 오류: {str(e)}")
                 return {}
+    
+    def _check_and_send_weather_alerts(self, market, weather_data):
+        """날씨 알림 조건 확인 및 전송"""
+        try:
+            # 심각한 날씨 조건 확인
+            severe_conditions = self._check_severe_weather_conditions(weather_data)
+            
+            if severe_conditions:
+                logger.info(f"시장 '{market.name}': 심각한 날씨 조건 감지 - {severe_conditions}")
+                
+                # 해당 지역 관련 사용자들 조회 (위치 기반)
+                location_users = User.query.filter(
+                    User.location.contains(market.location.split()[0]),  # 첫 번째 단어로 지역 매칭
+                    User.is_active == True,
+                    User.fcm_enabled == True,
+                    User.fcm_token.isnot(None)
+                ).all()
+                
+                if location_users:
+                    # 지역별 날씨 알림 전송
+                    result = weather_notification_service.send_weather_alert(
+                        users=location_users,
+                        weather_data={
+                            'location_name': f"{market.name} ({market.location})",
+                            'temp': weather_data.get('temp'),
+                            'humidity': weather_data.get('humidity'),
+                            'rain_1h': weather_data.get('rain_1h', 0),
+                            'created_at': datetime.utcnow()
+                        },
+                        alert_type="severe_weather"
+                    )
+                    logger.info(f"지역 알림 전송 완료: {result}")
+                
+                # 전체 심각한 날씨 알림 (주제 기반)
+                severe_result = weather_notification_service.send_severe_weather_alert(
+                    location=f"{market.name} ({market.location})",
+                    weather_condition=severe_conditions
+                )
+                logger.info(f"전체 심각한 날씨 알림 전송: {severe_result}")
+                
+        except Exception as e:
+            logger.error(f"날씨 알림 전송 중 오류: {str(e)}")
+    
+    def _check_severe_weather_conditions(self, weather_data):
+        """심각한 날씨 조건 확인"""
+        conditions = []
+        
+        temp = weather_data.get('temp')
+        rain = weather_data.get('rain_1h', 0)
+        wind_speed = weather_data.get('wind_speed', 0)
+        
+        # 기온 조건
+        if temp is not None:
+            if temp >= 35:
+                conditions.append("폭염")
+            elif temp <= -10:
+                conditions.append("한파")
+        
+        # 강수량 조건
+        if rain is not None and rain > 10:
+            conditions.append("호우")
+        
+        # 풍속 조건
+        if wind_speed is not None and wind_speed > 14:  # 14m/s 이상은 강풍
+            conditions.append("강풍")
+        
+        return ", ".join(conditions) if conditions else None
     
     def start(self):
         """스케줄러 시작"""

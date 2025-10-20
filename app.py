@@ -178,6 +178,206 @@ def logout():
     """로그아웃 (클라이언트에서 토큰 삭제)"""
     return jsonify({'message': '로그아웃되었습니다.'})
 
+# FCM 관련 API 엔드포인트들
+@app.route('/api/fcm/register', methods=['POST'])
+def register_fcm_token():
+    """FCM 토큰 등록/업데이트"""
+    from auth_utils import login_required
+    from models import User
+    
+    @login_required
+    def _register_fcm_token(current_user):
+        data = request.get_json()
+        
+        # 필수 필드 검증
+        if not data.get('token'):
+            return jsonify({'error': 'FCM 토큰이 필요합니다.'}), 400
+        
+        try:
+            fcm_token = data.get('token')
+            device_info = data.get('device_info', {})
+            
+            # 토큰 업데이트
+            current_user.update_fcm_token(fcm_token, device_info)
+            db.session.commit()
+            
+            # 기본 주제 구독 (선택사항)
+            topics = data.get('subscribe_topics', ['weather_alerts'])
+            for topic in topics:
+                current_user.subscribe_to_topic(topic)
+            
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'FCM 토큰이 등록되었습니다.',
+                'fcm_enabled': current_user.fcm_enabled,
+                'subscribed_topics': current_user.fcm_topics
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'FCM 토큰 등록 실패: {str(e)}'}), 500
+    
+    return _register_fcm_token()
+
+@app.route('/api/fcm/settings', methods=['GET', 'POST'])
+def fcm_settings():
+    """FCM 설정 조회/업데이트"""
+    from auth_utils import login_required
+    
+    @login_required
+    def _fcm_settings(current_user):
+        if request.method == 'GET':
+            # FCM 설정 조회
+            return jsonify({
+                'fcm_enabled': current_user.fcm_enabled,
+                'fcm_topics': current_user.fcm_topics or [],
+                'device_info': current_user.device_info,
+                'has_token': current_user.fcm_token is not None
+            })
+        
+        elif request.method == 'POST':
+            # FCM 설정 업데이트
+            data = request.get_json()
+            
+            try:
+                # FCM 활성화/비활성화
+                if 'enabled' in data:
+                    if data['enabled']:
+                        current_user.enable_fcm()
+                    else:
+                        current_user.disable_fcm()
+                
+                # 주제 구독 관리
+                if 'subscribe_topics' in data:
+                    for topic in data['subscribe_topics']:
+                        current_user.subscribe_to_topic(topic)
+                
+                if 'unsubscribe_topics' in data:
+                    for topic in data['unsubscribe_topics']:
+                        current_user.unsubscribe_from_topic(topic)
+                
+                db.session.commit()
+                
+                return jsonify({
+                    'message': 'FCM 설정이 업데이트되었습니다.',
+                    'fcm_enabled': current_user.fcm_enabled,
+                    'fcm_topics': current_user.fcm_topics or []
+                })
+                
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({'error': f'FCM 설정 업데이트 실패: {str(e)}'}), 500
+    
+    return _fcm_settings()
+
+@app.route('/api/fcm/test', methods=['POST'])
+def test_fcm_notification():
+    """FCM 테스트 알림 전송"""
+    from auth_utils import login_required
+    from fcm_utils import fcm_service
+    
+    @login_required
+    def _test_fcm_notification(current_user):
+        if not current_user.can_receive_fcm():
+            return jsonify({'error': 'FCM 알림을 받을 수 없는 상태입니다.'}), 400
+        
+        try:
+            # 테스트 알림 전송
+            success = fcm_service.send_notification(
+                token=current_user.fcm_token,
+                title="🧪 테스트 알림",
+                body="FCM 설정이 정상적으로 작동합니다!",
+                data={
+                    "type": "test",
+                    "user_id": str(current_user.id)
+                }
+            )
+            
+            if success:
+                return jsonify({'message': '테스트 알림이 전송되었습니다.'})
+            else:
+                return jsonify({'error': '테스트 알림 전송에 실패했습니다.'}), 500
+                
+        except Exception as e:
+            return jsonify({'error': f'테스트 알림 전송 실패: {str(e)}'}), 500
+    
+    return _test_fcm_notification()
+
+@app.route('/api/admin/fcm/send', methods=['POST'])
+def admin_send_fcm():
+    """관리자용 FCM 알림 전송"""
+    from fcm_utils import fcm_service
+    from models import User
+    
+    data = request.get_json()
+    
+    # 필수 필드 검증
+    required_fields = ['title', 'body']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({'error': f'{field}는 필수 입력사항입니다.'}), 400
+    
+    try:
+        title = data.get('title')
+        body = data.get('body')
+        notification_data = data.get('data', {})
+        
+        # 전송 방식 선택
+        if data.get('topic'):
+            # 주제로 전송
+            success = fcm_service.send_to_topic(
+                topic=data['topic'],
+                title=title,
+                body=body,
+                data=notification_data
+            )
+            return jsonify({
+                'message': f"주제 '{data['topic']}'로 알림이 전송되었습니다.",
+                'success': success
+            })
+        
+        elif data.get('user_ids'):
+            # 특정 사용자들에게 전송
+            users = User.query.filter(
+                User.id.in_(data['user_ids']),
+                User.fcm_token.isnot(None),
+                User.fcm_enabled == True
+            ).all()
+            
+            if not users:
+                return jsonify({'error': '알림을 받을 수 있는 사용자가 없습니다.'}), 400
+            
+            tokens = [user.fcm_token for user in users]
+            result = fcm_service.send_multicast(tokens, title, body, notification_data)
+            
+            return jsonify({
+                'message': f'{len(users)}명의 사용자에게 알림이 전송되었습니다.',
+                'result': result
+            })
+        
+        else:
+            # 모든 FCM 활성화 사용자에게 전송
+            users = User.query.filter(
+                User.fcm_token.isnot(None),
+                User.fcm_enabled == True,
+                User.is_active == True
+            ).all()
+            
+            if not users:
+                return jsonify({'error': '알림을 받을 수 있는 사용자가 없습니다.'}), 400
+            
+            tokens = [user.fcm_token for user in users]
+            result = fcm_service.send_multicast(tokens, title, body, notification_data)
+            
+            return jsonify({
+                'message': f'전체 {len(users)}명의 사용자에게 알림이 전송되었습니다.',
+                'result': result
+            })
+            
+    except Exception as e:
+        return jsonify({'error': f'알림 전송 실패: {str(e)}'}), 500
+
 # 기존 사용자 생성 API는 관리자용으로 변경
 @app.route('/api/admin/users', methods=['POST'])
 def create_user_admin():
@@ -261,7 +461,9 @@ def get_current_weather():
             return jsonify({'error': 'KMA_SERVICE_KEY가 설정되지 않았습니다.'}), 500
         
         # 위경도를 격자좌표로 변환
+        print(lat, lon)
         nx, ny = convert_to_grid(lat, lon)
+        print(nx, ny)
         
         # Weather API 호출
         weather_api = KMAWeatherAPI(service_key)
