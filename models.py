@@ -111,6 +111,8 @@ class Market(db.Model):
     location = db.Column(db.String(300), nullable=False)
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
+    nx = db.Column(db.Integer)  # 기상청 격자 X 좌표
+    ny = db.Column(db.Integer)  # 기상청 격자 Y 좌표
     category = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -126,6 +128,8 @@ class Market(db.Model):
             'location': self.location,
             'latitude': self.latitude,
             'longitude': self.longitude,
+            'nx': self.nx,
+            'ny': self.ny,
             'category': self.category,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
