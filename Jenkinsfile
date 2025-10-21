@@ -29,8 +29,8 @@ node {
     }
 
     stage('Kubernetes deploy') {
-        sh "kubectl delete -f /services/mwn/mwn_backend_service_withdb.yaml -n mwn"
-        sh "kubectl apply -f /services/mwn/mwn_backend_service_withdb.yaml -n mwn"
+        sh "kubectl delete -f /services/mwn/mwn_backend_service.yaml -n mwn"
+        sh "kubectl apply -f /services/mwn/mwn_backend_service.yaml -n mwn"
     }
 
     stage('Complete') {
