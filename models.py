@@ -48,6 +48,7 @@ class User(db.Model):
             'email_verified': self.email_verified,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'notification_preferences': self.notification_preferences,
+            'fcm_token': self.fcm_token,
             'fcm_enabled': self.fcm_enabled,
             'fcm_topics': self.fcm_topics,
             'device_info': self.device_info
