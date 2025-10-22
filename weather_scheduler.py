@@ -17,6 +17,7 @@ from app import app, db
 from models import Market, Weather, User
 from weather_api import KMAWeatherAPI, convert_to_grid
 from fcm_integration.fcm_utils import weather_notification_service
+from weather_alerts import weather_alert_system
 
 # 환경변수 로드
 load_dotenv()
@@ -250,6 +251,22 @@ class WeatherScheduler:
         
         return ", ".join(conditions) if conditions else None
     
+    def check_rain_alerts(self):
+        """관심 시장의 비 예보 확인 및 알림 전송"""
+        logger.info("관심 시장 비 예보 알림 작업 시작")
+        
+        try:
+            # 비 알림 시스템 실행
+            result = weather_alert_system.check_all_markets_and_send_alerts(hours=24)
+            
+            if result.get('success'):
+                logger.info(f"비 예보 알림 완료: {result.get('message')}")
+            else:
+                logger.error(f"비 예보 알림 실패: {result.get('error')}")
+                
+        except Exception as e:
+            logger.error(f"비 예보 알림 작업 중 오류: {str(e)}")
+    
     def start(self):
         """스케줄러 시작"""
         if not self.weather_api:
@@ -262,6 +279,15 @@ class WeatherScheduler:
             trigger=IntervalTrigger(minutes=self.check_interval_minutes),
             id='weather_collection_job',
             name='시장별 날씨 데이터 수집',
+            replace_existing=True
+        )
+        
+        # 비 예보 알림 작업 등록 (매 시간마다)
+        self.scheduler.add_job(
+            func=self.check_rain_alerts,
+            trigger=IntervalTrigger(hours=1),
+            id='rain_alert_job',
+            name='관심 시장 비 예보 알림',
             replace_existing=True
         )
         

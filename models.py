@@ -133,6 +133,65 @@ class User(db.Model):
         admin.set_password(password)
         return admin
 
+class UserMarketInterest(db.Model):
+    """사용자-시장 관심목록 연결 테이블"""
+    __tablename__ = 'user_market_interests'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    notification_enabled = db.Column(db.Boolean, default=True)  # 해당 시장 알림 활성화 여부
+    
+    # 복합 인덱스로 중복 방지
+    __table_args__ = (db.UniqueConstraint('user_id', 'market_id', name='unique_user_market'),)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('market_interests', lazy=True))
+    market = db.relationship('Market', backref=db.backref('interested_users', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'market_id': self.market_id,
+            'market_name': self.market.name if self.market else None,
+            'market_location': self.market.location if self.market else None,
+            'market_coordinates': {
+                'latitude': self.market.latitude,
+                'longitude': self.market.longitude,
+                'nx': self.market.nx,
+                'ny': self.market.ny
+            } if self.market else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'is_active': self.is_active,
+            'notification_enabled': self.notification_enabled
+        }
+    
+    @classmethod
+    def add_interest(cls, user_id, market_id):
+        """관심 목록에 시장 추가"""
+        existing = cls.query.filter_by(user_id=user_id, market_id=market_id).first()
+        
+        if existing:
+            # 이미 존재하는 경우 활성화
+            existing.is_active = True
+            existing.notification_enabled = True
+            return existing
+        
+        # 새로 생성
+        interest = cls(user_id=user_id, market_id=market_id)
+        return interest
+    
+    @classmethod
+    def remove_interest(cls, user_id, market_id):
+        """관심 목록에서 시장 제거"""
+        interest = cls.query.filter_by(user_id=user_id, market_id=market_id).first()
+        if interest:
+            interest.is_active = False
+        return interest
+
 class Market(db.Model):
     __tablename__ = 'markets'
     
@@ -165,6 +224,25 @@ class Market(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'is_active': self.is_active
         }
+    
+    @classmethod
+    def search_by_name(cls, query, limit=20):
+        """시장 이름으로 검색"""
+        return cls.query.filter(
+            cls.name.contains(query),
+            cls.is_active == True
+        ).limit(limit).all()
+    
+    def get_interested_users(self):
+        """이 시장에 관심을 가진 활성 사용자들 반환"""
+        from models import UserMarketInterest
+        interests = UserMarketInterest.query.filter_by(
+            market_id=self.id,
+            is_active=True,
+            notification_enabled=True
+        ).all()
+        
+        return [interest.user for interest in interests if interest.user.is_active and interest.user.can_receive_fcm()]
 
 class DamageStatus(db.Model):
     __tablename__ = 'damage_statuses'

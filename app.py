@@ -459,6 +459,153 @@ def handle_markets():
         db.session.commit()
         return jsonify(market.to_dict()), 201
 
+@app.route('/api/markets/search', methods=['GET'])
+def search_markets():
+    """시장 이름으로 검색"""
+    from models import Market
+    
+    query = request.args.get('q', '').strip()
+    limit = request.args.get('limit', 20, type=int)
+    
+    if not query:
+        return jsonify({'error': '검색어를 입력해주세요.'}), 400
+    
+    if len(query) < 2:
+        return jsonify({'error': '검색어는 최소 2글자 이상이어야 합니다.'}), 400
+    
+    try:
+        markets = Market.search_by_name(query, limit)
+        return jsonify({
+            'query': query,
+            'count': len(markets),
+            'markets': [market.to_dict() for market in markets]
+        })
+    except Exception as e:
+        return jsonify({'error': f'검색 중 오류가 발생했습니다: {str(e)}'}), 500
+
+@app.route('/api/watchlist', methods=['GET'])
+def get_user_watchlist():
+    """사용자의 관심 시장 목록 조회"""
+    from models import UserMarketInterest
+    from auth_utils import login_required
+    
+    @login_required
+    def _get_user_watchlist(current_user):
+        try:
+            interests = UserMarketInterest.query.filter_by(
+                user_id=current_user.id,
+                is_active=True
+            ).all()
+            
+            return jsonify({
+                'count': len(interests),
+                'watchlist': [interest.to_dict() for interest in interests]
+            })
+        except Exception as e:
+            return jsonify({'error': f'관심 목록 조회 실패: {str(e)}'}), 500
+    
+    return _get_user_watchlist()
+
+@app.route('/api/watchlist', methods=['POST'])
+def add_to_watchlist():
+    """시장을 관심 목록에 추가"""
+    from models import UserMarketInterest, Market
+    from auth_utils import login_required
+    
+    @login_required
+    def _add_to_watchlist(current_user):
+        data = request.get_json()
+        
+        if not data.get('market_id'):
+            return jsonify({'error': 'market_id가 필요합니다.'}), 400
+        
+        market_id = data.get('market_id')
+        
+        try:
+            # 시장 존재 확인
+            market = Market.query.get(market_id)
+            if not market:
+                return jsonify({'error': '존재하지 않는 시장입니다.'}), 404
+            
+            if not market.is_active:
+                return jsonify({'error': '비활성화된 시장입니다.'}), 400
+            
+            # 관심 목록에 추가
+            interest = UserMarketInterest.add_interest(current_user.id, market_id)
+            db.session.add(interest)
+            db.session.commit()
+            
+            return jsonify({
+                'message': f'{market.name}이(가) 관심 목록에 추가되었습니다.',
+                'interest': interest.to_dict()
+            }), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'관심 목록 추가 실패: {str(e)}'}), 500
+    
+    return _add_to_watchlist()
+
+@app.route('/api/watchlist/<int:market_id>', methods=['DELETE'])
+def remove_from_watchlist(market_id):
+    """시장을 관심 목록에서 제거"""
+    from models import UserMarketInterest
+    from auth_utils import login_required
+    
+    @login_required
+    def _remove_from_watchlist(current_user):
+        try:
+            interest = UserMarketInterest.remove_interest(current_user.id, market_id)
+            
+            if not interest:
+                return jsonify({'error': '관심 목록에 해당 시장이 없습니다.'}), 404
+            
+            db.session.commit()
+            
+            return jsonify({
+                'message': '관심 목록에서 제거되었습니다.',
+                'market_id': market_id
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'관심 목록 제거 실패: {str(e)}'}), 500
+    
+    return _remove_from_watchlist()
+
+@app.route('/api/watchlist/<int:interest_id>/notification', methods=['PUT'])
+def toggle_notification_for_interest(interest_id):
+    """특정 관심 시장의 알림 설정 토글"""
+    from models import UserMarketInterest
+    from auth_utils import login_required
+    
+    @login_required
+    def _toggle_notification(current_user):
+        try:
+            interest = UserMarketInterest.query.filter_by(
+                id=interest_id,
+                user_id=current_user.id
+            ).first()
+            
+            if not interest:
+                return jsonify({'error': '해당 관심 항목을 찾을 수 없습니다.'}), 404
+            
+            # 알림 설정 토글
+            interest.notification_enabled = not interest.notification_enabled
+            db.session.commit()
+            
+            status = "활성화" if interest.notification_enabled else "비활성화"
+            return jsonify({
+                'message': f'알림이 {status}되었습니다.',
+                'interest': interest.to_dict()
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'알림 설정 변경 실패: {str(e)}'}), 500
+    
+    return _toggle_notification()
+
 @app.route('/api/damage-status', methods=['GET', 'POST'])
 def handle_damage_status():
     from models import DamageStatus
@@ -630,6 +777,59 @@ def manual_weather_collection():
         return jsonify({'status': 'success', 'message': '날씨 데이터 수집이 완료되었습니다.'})
     except Exception as e:
         return jsonify({'error': f'수동 수집 실패: {str(e)}'}), 500
+
+@app.route('/api/admin/rain-alerts/check', methods=['POST'])
+def manual_rain_alert_check():
+    """관리자용 수동 비 예보 알림 확인 및 전송"""
+    from auth_utils import admin_required
+    from weather_alerts import check_and_send_rain_alerts
+    
+    @admin_required
+    def _manual_rain_alert_check(current_user):
+        try:
+            data = request.get_json() or {}
+            hours = data.get('hours', 24)
+            
+            result = check_and_send_rain_alerts(hours)
+            
+            if result.get('success'):
+                return jsonify({
+                    'status': 'success',
+                    'message': f'비 예보 알림 확인 완료',
+                    'result': result
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': '비 예보 알림 확인 실패',
+                    'error': result.get('error')
+                }), 500
+                
+        except Exception as e:
+            return jsonify({'error': f'비 예보 알림 확인 실패: {str(e)}'}), 500
+    
+    return _manual_rain_alert_check()
+
+@app.route('/api/markets/<int:market_id>/rain-forecast', methods=['GET'])
+def get_market_rain_forecast(market_id):
+    """특정 시장의 비 예보 확인"""
+    from weather_alerts import check_market_rain_forecast
+    
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        result = check_market_rain_forecast(market_id, hours)
+        
+        if 'error' in result:
+            return jsonify(result), 404
+        
+        return jsonify({
+            'status': 'success',
+            'market_id': market_id,
+            'forecast': result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'비 예보 확인 실패: {str(e)}'}), 500
 
 # 웹 데이터베이스 뷰어 라우트들 추가
 @app.route('/db-viewer')

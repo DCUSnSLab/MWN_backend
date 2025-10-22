@@ -59,6 +59,8 @@ from models import User, Market, DamageStatus, Weather
 
 with app.app_context():
     try:
+        # Import all models to ensure they are registered
+        from models import User, Market, DamageStatus, Weather, UserMarketInterest
         db.create_all()
         print('✅ Database tables created successfully!')
     except Exception as e:
@@ -242,6 +244,7 @@ echo ""
 echo "📋 Summary:"
 echo "  - Database connection: ✅"
 echo "  - Database tables: ✅" 
+echo "  - Admin account: ✅"
 echo "  - Market data: ✅"
 echo "  - Health check: ✅"
 echo ""
