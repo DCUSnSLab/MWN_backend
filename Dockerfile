@@ -1,5 +1,5 @@
-# Python 3.10 base image
-FROM python:3.10-slim
+# Dockerfile for Weather Notification Backend - Kubernetes Ready
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -7,6 +7,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -18,15 +19,23 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create instance directory for SQLite database
-RUN mkdir -p instance
+# Create necessary directories
+RUN mkdir -p instance fcm_integration
+
+# Make entrypoint script executable
+RUN chmod +x entrypoint.sh
 
 # Expose port
 EXPOSE 8002
 
-# Environment variables (can be overridden)
+# Environment variables
 ENV FLASK_APP=app.py
 ENV PYTHONUNBUFFERED=1
+ENV FLASK_ENV=production
 
-# Run the application with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8002", "--workers", "4", "--timeout", "120", "app:app"]
+# Health check for Kubernetes
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
+
+# Use entrypoint script for initialization and startup
+ENTRYPOINT ["./entrypoint.sh"]

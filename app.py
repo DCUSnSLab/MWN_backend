@@ -31,10 +31,14 @@ def health_check():
 def get_users():
     """사용자 목록 조회 (관리자용)"""
     from models import User
-    from auth_utils import login_required
+    from auth_utils import admin_required
     
-    users = User.query.all()
-    return jsonify([user.to_dict() for user in users])
+    @admin_required
+    def _get_users(current_user):
+        users = User.query.all()
+        return jsonify([user.to_dict() for user in users])
+    
+    return _get_users()
 
 @app.route('/api/auth/register', methods=['POST'])
 def register():
@@ -315,95 +319,125 @@ def admin_send_fcm():
     """관리자용 FCM 알림 전송"""
     from fcm_integration.fcm_utils import fcm_service
     from models import User
+    from auth_utils import admin_required
     
-    data = request.get_json()
+    @admin_required
+    def _admin_send_fcm(current_user):
+        data = request.get_json()
+        
+        # 필수 필드 검증
+        required_fields = ['title', 'body']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'{field}는 필수 입력사항입니다.'}), 400
+        
+        try:
+            title = data.get('title')
+            body = data.get('body')
+            notification_data = data.get('data', {})
+            
+            # 전송 방식 선택
+            if data.get('topic'):
+                # 주제로 전송
+                success = fcm_service.send_to_topic(
+                    topic=data['topic'],
+                    title=title,
+                    body=body,
+                    data=notification_data
+                )
+                return jsonify({
+                    'message': f"주제 '{data['topic']}'로 알림이 전송되었습니다.",
+                    'success': success
+                })
+            
+            elif data.get('user_ids'):
+                # 특정 사용자들에게 전송
+                users = User.query.filter(
+                    User.id.in_(data['user_ids']),
+                    User.fcm_token.isnot(None),
+                    User.fcm_enabled == True
+                ).all()
+                
+                if not users:
+                    return jsonify({'error': '알림을 받을 수 있는 사용자가 없습니다.'}), 400
+                
+                tokens = [user.fcm_token for user in users]
+                result = fcm_service.send_multicast(tokens, title, body, notification_data)
+                
+                return jsonify({
+                    'message': f'{len(users)}명의 사용자에게 알림이 전송되었습니다.',
+                    'result': result
+                })
+            
+            else:
+                # 모든 FCM 활성화 사용자에게 전송
+                users = User.query.filter(
+                    User.fcm_token.isnot(None),
+                    User.fcm_enabled == True,
+                    User.is_active == True
+                ).all()
+                
+                if not users:
+                    return jsonify({'error': '알림을 받을 수 있는 사용자가 없습니다.'}), 400
+                
+                tokens = [user.fcm_token for user in users]
+                result = fcm_service.send_multicast(tokens, title, body, notification_data)
+                
+                return jsonify({
+                    'message': f'전체 {len(users)}명의 사용자에게 알림이 전송되었습니다.',
+                    'result': result
+                })
+                
+        except Exception as e:
+            return jsonify({'error': f'알림 전송 실패: {str(e)}'}), 500
     
-    # 필수 필드 검증
-    required_fields = ['title', 'body']
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({'error': f'{field}는 필수 입력사항입니다.'}), 400
-    
-    try:
-        title = data.get('title')
-        body = data.get('body')
-        notification_data = data.get('data', {})
-        
-        # 전송 방식 선택
-        if data.get('topic'):
-            # 주제로 전송
-            success = fcm_service.send_to_topic(
-                topic=data['topic'],
-                title=title,
-                body=body,
-                data=notification_data
-            )
-            return jsonify({
-                'message': f"주제 '{data['topic']}'로 알림이 전송되었습니다.",
-                'success': success
-            })
-        
-        elif data.get('user_ids'):
-            # 특정 사용자들에게 전송
-            users = User.query.filter(
-                User.id.in_(data['user_ids']),
-                User.fcm_token.isnot(None),
-                User.fcm_enabled == True
-            ).all()
-            
-            if not users:
-                return jsonify({'error': '알림을 받을 수 있는 사용자가 없습니다.'}), 400
-            
-            tokens = [user.fcm_token for user in users]
-            result = fcm_service.send_multicast(tokens, title, body, notification_data)
-            
-            return jsonify({
-                'message': f'{len(users)}명의 사용자에게 알림이 전송되었습니다.',
-                'result': result
-            })
-        
-        else:
-            # 모든 FCM 활성화 사용자에게 전송
-            users = User.query.filter(
-                User.fcm_token.isnot(None),
-                User.fcm_enabled == True,
-                User.is_active == True
-            ).all()
-            
-            if not users:
-                return jsonify({'error': '알림을 받을 수 있는 사용자가 없습니다.'}), 400
-            
-            tokens = [user.fcm_token for user in users]
-            result = fcm_service.send_multicast(tokens, title, body, notification_data)
-            
-            return jsonify({
-                'message': f'전체 {len(users)}명의 사용자에게 알림이 전송되었습니다.',
-                'result': result
-            })
-            
-    except Exception as e:
-        return jsonify({'error': f'알림 전송 실패: {str(e)}'}), 500
+    return _admin_send_fcm()
 
 # 기존 사용자 생성 API는 관리자용으로 변경
 @app.route('/api/admin/users', methods=['POST'])
 def create_user_admin():
     """관리자용 사용자 생성"""
     from models import User
+    from auth_utils import admin_required
     
-    data = request.get_json()
-    user = User(
-        name=data.get('name'),
-        email=data.get('email'),
-        phone=data.get('phone'),
-        location=data.get('location')
-    )
+    @admin_required
+    def _create_user_admin(current_user):
+        data = request.get_json()
+        
+        # 필수 필드 검증
+        required_fields = ['name', 'email', 'password']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'{field}는 필수 입력사항입니다.'}), 400
+        
+        # 이메일 중복 확인
+        if User.query.filter_by(email=data.get('email')).first():
+            return jsonify({'error': '이미 사용 중인 이메일입니다.'}), 400
+        
+        try:
+            user = User(
+                name=data.get('name'),
+                email=data.get('email'),
+                phone=data.get('phone'),
+                location=data.get('location'),
+                role=data.get('role', 'user')  # 기본값은 일반 사용자
+            )
+            
+            user.set_password(data.get('password'))
+            
+            db.session.add(user)
+            db.session.commit()
+            
+            return jsonify({
+                'message': '사용자가 생성되었습니다.',
+                'user': user.to_dict()
+            }), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'사용자 생성 실패: {str(e)}'}), 500
     
-    # 임시 패스워드 설정 (실제로는 이메일로 전송하거나 다른 방식 사용)
-    user.set_password(data.get('password', 'temp123'))
-    
-    db.session.add(user)
-    db.session.commit()
-    return jsonify(user.to_dict()), 201
+    return _create_user_admin()
 
 @app.route('/api/markets', methods=['GET', 'POST'])
 def handle_markets():

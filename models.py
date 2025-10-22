@@ -14,6 +14,7 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
+    role = db.Column(db.String(20), default='user')  # 'user' or 'admin'
     notification_preferences = db.Column(db.JSON)
     email_verified = db.Column(db.Boolean, default=False)
     last_login = db.Column(db.DateTime)
@@ -43,6 +44,7 @@ class User(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'is_active': self.is_active,
+            'role': self.role,
             'email_verified': self.email_verified,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'notification_preferences': self.notification_preferences,
@@ -102,6 +104,34 @@ class User(db.Model):
         return (self.is_active and 
                 self.fcm_enabled and 
                 self.fcm_token is not None)
+    
+    def is_admin(self):
+        """관리자 권한 확인"""
+        return self.role == 'admin'
+    
+    def make_admin(self):
+        """관리자 권한 부여"""
+        self.role = 'admin'
+        self.updated_at = datetime.utcnow()
+    
+    def make_user(self):
+        """일반 사용자 권한으로 변경"""
+        self.role = 'user'
+        self.updated_at = datetime.utcnow()
+    
+    @classmethod
+    def create_admin(cls, name, email, password, phone=None, location=None):
+        """관리자 계정 생성"""
+        admin = cls(
+            name=name,
+            email=email,
+            phone=phone,
+            location=location,
+            role='admin',
+            email_verified=True  # 관리자는 기본적으로 이메일 인증됨
+        )
+        admin.set_password(password)
+        return admin
 
 class Market(db.Model):
     __tablename__ = 'markets'

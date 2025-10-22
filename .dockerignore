@@ -39,9 +39,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Database
-*.db
-instance/
+# Database (exclude SQLite files but keep directory structure)
+instance/*.db
 
 # Logs
 *.log

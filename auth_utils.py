@@ -113,6 +113,41 @@ def optional_auth(f):
     
     return decorated_function
 
+def admin_required(f):
+    """관리자 권한이 필요한 엔드포인트에 사용하는 데코레이터"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        if not user.is_admin():
+            return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
+        
+        # 함수에 current_user를 전달
+        return f(current_user=user, *args, **kwargs)
+    
+    return decorated_function
+
+def user_or_admin_required(f):
+    """본인 또는 관리자 권한이 필요한 데코레이터"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # URL에서 user_id 파라미터를 확인
+        target_user_id = kwargs.get('user_id') or request.view_args.get('user_id')
+        
+        # 본인이거나 관리자인 경우 접근 허용
+        if user.id == target_user_id or user.is_admin():
+            return f(current_user=user, *args, **kwargs)
+        else:
+            return jsonify({'error': '본인 정보이거나 관리자 권한이 필요합니다.'}), 403
+    
+    return decorated_function
+
 def validate_email(email):
     """이메일 형식 검증"""
     import re
