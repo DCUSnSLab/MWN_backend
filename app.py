@@ -74,12 +74,13 @@ def register():
         return jsonify({'error': '이미 사용 중인 이메일입니다.'}), 400
     
     try:
-        # 새 사용자 생성
+        # 새 사용자 생성 (일반 사용자로 설정)
         user = User(
             name=name,
             email=email,
             phone=phone,
-            location=location
+            location=location,
+            role='user'  # 회원가입은 항상 일반 사용자로
         )
         user.set_password(password)
         
