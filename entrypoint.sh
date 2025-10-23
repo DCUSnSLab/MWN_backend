@@ -76,7 +76,7 @@ from models import User
 
 with app.app_context():
     try:
-        admin_email = 'snslab'
+        admin_email = 'snslab@gmail.com'
         admin_password = 'snslab@cu'
         admin_name = '시스템 관리자'
         
