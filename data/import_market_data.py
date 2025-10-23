@@ -9,6 +9,8 @@ Excel 파일의 열 정보:
 - 경도: longitude
 - nx: 기상청 격자 X 좌표
 - ny: 기상청 격자 Y 좌표
+
+PostgreSQL/SQLite 호환
 """
 
 import pandas as pd
@@ -121,15 +123,18 @@ def import_to_database(df):
                     db.session.add(market)
                     success_count += 1
                     
-                    if success_count % 10 == 0:
+                    # 주기적으로 커밋 (대용량 데이터 처리 시 메모리 효율성)
+                    if success_count % 50 == 0:
+                        db.session.commit()
                         print(f"진행 상황: {success_count}개 처리됨")
                 
                 except Exception as e:
                     print(f"행 {index} 처리 실패: {e}")
+                    print(f"  - 데이터: {row['name']}, 위도: {row['latitude']}, 경도: {row['longitude']}")
                     error_count += 1
                     continue
             
-            # 커밋
+            # 최종 커밋
             db.session.commit()
             print(f"\n데이터베이스 저장 완료!")
             print(f"성공: {success_count}개")

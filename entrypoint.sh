@@ -179,24 +179,6 @@ with app.app_context():
         exit(1)
 "
 
-# 데이터베이스 마이그레이션 (필요한 경우)
-echo "🔄 Running database migrations..."
-python -c "
-from flask_migrate import upgrade
-from app import app
-
-try:
-    with app.app_context():
-        # Flask-Migrate가 설정된 경우에만 실행
-        try:
-            upgrade()
-            print('✅ Database migrations completed!')
-        except Exception as e:
-            print(f'ℹ️ No migrations to run or Flask-Migrate not configured: {e}')
-except Exception as e:
-    print(f'⚠️ Migration check failed: {e}')
-"
-
 # Firebase 서비스 계정 키 파일 확인
 echo "🔥 Checking Firebase configuration..."
 if [ -n "${FIREBASE_SERVICE_ACCOUNT_KEY}" ]; then
