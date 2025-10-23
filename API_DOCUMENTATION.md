@@ -55,6 +55,7 @@ POST /api/auth/register
         "phone": "010-1234-5678",
         "location": "서울특별시 중구",
         "is_active": true,
+        "role": "user",
         "email_verified": false,
         "created_at": "2025-10-19T13:00:00.000000"
     },
@@ -162,9 +163,10 @@ POST /api/auth/logout
 
 ### 👥 사용자 관리 (관리자용)
 
-#### 7. 사용자 목록 조회
+#### 7. 사용자 목록 조회 (관리자 권한 필요)
 ```http
 GET /api/users
+Authorization: Bearer {admin_access_token}
 ```
 
 **응답**:
@@ -184,9 +186,10 @@ GET /api/users
 ]
 ```
 
-#### 8. 관리자용 사용자 생성
+#### 8. 관리자용 사용자 생성 (관리자 권한 필요)
 ```http
 POST /api/admin/users
+Authorization: Bearer {admin_access_token}
 ```
 
 **요청**:
@@ -196,7 +199,8 @@ POST /api/admin/users
     "email": "lee@example.com",
     "password": "TempPass123!",
     "phone": "010-2345-6789",
-    "location": "부산광역시 중구"
+    "location": "부산광역시 중구",
+    "role": "user"
 }
 ```
 
@@ -219,6 +223,8 @@ POST /api/markets
         "location": "서울특별시 중구 창신동",
         "latitude": 37.5707,
         "longitude": 127.0087,
+        "nx": 60,
+        "ny": 127,
         "category": "전통시장",
         "is_active": true,
         "created_at": "2025-10-17T07:00:00.000000"
@@ -237,11 +243,137 @@ POST /api/markets
 }
 ```
 
+#### 9-1. 시장 검색
+```http
+GET /api/markets/search?q={검색어}&limit={개수}
+```
+
+**요청 파라미터**:
+- `q`: 검색어 (최소 2글자)
+- `limit`: 결과 개수 (기본값: 20)
+
+**응답**:
+```json
+{
+    "query": "동대문",
+    "count": 2,
+    "markets": [
+        {
+            "id": 1,
+            "name": "동대문시장",
+            "location": "서울특별시 중구 창신동",
+            "latitude": 37.5707,
+            "longitude": 127.0087,
+            "nx": 60,
+            "ny": 127,
+            "category": "전통시장",
+            "is_active": true
+        }
+    ]
+}
+```
+
+---
+
+### ⭐ 관심목록 관리
+
+#### 10. 사용자 관심목록 조회 (인증 필요)
+```http
+GET /api/watchlist
+Authorization: Bearer {access_token}
+```
+
+**응답**:
+```json
+{
+    "count": 2,
+    "watchlist": [
+        {
+            "id": 1,
+            "user_id": 1,
+            "market_id": 1,
+            "market_name": "동대문시장",
+            "market_location": "서울특별시 중구 창신동",
+            "market_coordinates": {
+                "latitude": 37.5707,
+                "longitude": 127.0087,
+                "nx": 60,
+                "ny": 127
+            },
+            "created_at": "2025-10-22T08:00:00.000000",
+            "is_active": true,
+            "notification_enabled": true
+        }
+    ]
+}
+```
+
+#### 11. 관심목록에 시장 추가 (인증 필요)
+```http
+POST /api/watchlist
+Authorization: Bearer {access_token}
+```
+
+**요청**:
+```json
+{
+    "market_id": 1
+}
+```
+
+**응답**:
+```json
+{
+    "message": "동대문시장이(가) 관심 목록에 추가되었습니다.",
+    "interest": {
+        "id": 1,
+        "user_id": 1,
+        "market_id": 1,
+        "market_name": "동대문시장",
+        "is_active": true,
+        "notification_enabled": true,
+        "created_at": "2025-10-22T08:00:00.000000"
+    }
+}
+```
+
+#### 12. 관심목록에서 시장 제거 (인증 필요)
+```http
+DELETE /api/watchlist/{market_id}
+Authorization: Bearer {access_token}
+```
+
+**응답**:
+```json
+{
+    "message": "관심 목록에서 제거되었습니다.",
+    "market_id": 1
+}
+```
+
+#### 13. 관심 시장 알림 설정 토글 (인증 필요)
+```http
+PUT /api/watchlist/{interest_id}/notification
+Authorization: Bearer {access_token}
+```
+
+**응답**:
+```json
+{
+    "message": "알림이 활성화되었습니다.",
+    "interest": {
+        "id": 1,
+        "notification_enabled": true,
+        "market_name": "동대문시장"
+    }
+}
+```
+
 ---
 
 ### ⚠️ 피해 상태 관리
 
-#### 10. 피해 상태 조회/생성
+#### 14. 피해 상태 조회/생성
 ```http
 GET /api/damage-status
 POST /api/damage-status
@@ -260,9 +392,79 @@ POST /api/damage-status
 
 ---
 
+### 🌧️ 비 예보 알림
+
+#### 15. 특정 시장의 비 예보 확인
+```http
+GET /api/markets/{market_id}/rain-forecast?hours={시간}
+```
+
+**요청 파라미터**:
+- `market_id`: 시장 ID
+- `hours`: 예보 확인 시간 (기본값: 24시간)
+
+**응답**:
+```json
+{
+    "status": "success",
+    "market_id": 1,
+    "forecast": {
+        "has_rain": true,
+        "market_name": "동대문시장",
+        "alerts": [
+            {
+                "datetime": "2025-10-22T14:00:00",
+                "pop": 60,
+                "pty": "1",
+                "description": "비"
+            }
+        ],
+        "checked_hours": 24
+    }
+}
+```
+
+#### 16. 관리자용 수동 비 예보 알림 확인 (관리자 권한 필요)
+```http
+POST /api/admin/rain-alerts/check
+Authorization: Bearer {admin_access_token}
+```
+
+**요청**:
+```json
+{
+    "hours": 24
+}
+```
+
+**응답**:
+```json
+{
+    "status": "success",
+    "message": "비 예보 알림 확인 완료",
+    "result": {
+        "success": true,
+        "checked_markets": 15,
+        "alerts_sent": 3,
+        "results": [
+            {
+                "market": "동대문시장",
+                "rain_forecast": true,
+                "alert_result": {
+                    "success": true,
+                    "sent_count": 5
+                }
+            }
+        ]
+    }
+}
+```
+
+---
+
 ### 🌤️ 날씨 데이터
 
-#### 11. 현재 날씨 조회
+#### 17. 현재 날씨 조회
 ```http
 POST /api/weather/current
 ```
@@ -296,7 +498,7 @@ POST /api/weather/current
 }
 ```
 
-#### 12. 날씨 예보 조회
+#### 18. 날씨 예보 조회
 ```http
 POST /api/weather/forecast
 ```
@@ -331,7 +533,7 @@ POST /api/weather/forecast
 }
 ```
 
-#### 13. 저장된 날씨 데이터 조회
+#### 19. 저장된 날씨 데이터 조회
 ```http
 GET /api/weather
 GET /api/weather?location_name=동대문
@@ -361,7 +563,7 @@ GET /api/weather?limit=50
 
 ### 🤖 스케줄러 관리
 
-#### 14. 스케줄러 시작
+#### 20. 스케줄러 시작
 ```http
 POST /api/scheduler/start
 ```
@@ -374,12 +576,12 @@ POST /api/scheduler/start
 }
 ```
 
-#### 15. 스케줄러 정지
+#### 21. 스케줄러 정지
 ```http
 POST /api/scheduler/stop
 ```
 
-#### 16. 스케줄러 상태 조회
+#### 22. 스케줄러 상태 조회
 ```http
 GET /api/scheduler/status
 ```
@@ -399,7 +601,7 @@ GET /api/scheduler/status
 }
 ```
 
-#### 17. 날씨 데이터 통계
+#### 23. 날씨 데이터 통계
 ```http
 GET /api/scheduler/stats
 ```
@@ -416,7 +618,7 @@ GET /api/scheduler/stats
 }
 ```
 
-#### 18. 수동 날씨 데이터 수집
+#### 24. 수동 날씨 데이터 수집
 ```http
 POST /api/scheduler/collect
 ```
@@ -433,7 +635,7 @@ POST /api/scheduler/collect
 
 ### 📱 FCM (푸시 알림) 관리
 
-#### 19. FCM 토큰 등록/업데이트 (인증 필요)
+#### 25. FCM 토큰 등록/업데이트 (인증 필요)
 ```http
 POST /api/fcm/register
 Authorization: Bearer {access_token}
@@ -461,7 +663,7 @@ Authorization: Bearer {access_token}
 }
 ```
 
-#### 20. FCM 설정 조회/업데이트 (인증 필요)
+#### 26. FCM 설정 조회/업데이트 (인증 필요)
 ```http
 GET /api/fcm/settings
 POST /api/fcm/settings
@@ -490,7 +692,7 @@ Authorization: Bearer {access_token}
 }
 ```
 
-#### 21. FCM 테스트 알림 전송 (인증 필요)
+#### 27. FCM 테스트 알림 전송 (인증 필요)
 ```http
 POST /api/fcm/test
 Authorization: Bearer {access_token}
@@ -503,9 +705,10 @@ Authorization: Bearer {access_token}
 }
 ```
 
-#### 22. 관리자용 FCM 알림 전송
+#### 28. 관리자용 FCM 알림 전송 (관리자 권한 필요)
 ```http
 POST /api/admin/fcm/send
+Authorization: Bearer {admin_access_token}
 ```
 
 **요청** (주제로 전송):
@@ -560,13 +763,13 @@ POST /api/admin/fcm/send
 
 ### 🗄️ 데이터베이스 뷰어
 
-#### 23. 웹 데이터베이스 뷰어
+#### 29. 웹 데이터베이스 뷰어
 ```http
 GET /db-viewer
 ```
 **설명**: 브라우저에서 데이터베이스 내용을 확인할 수 있는 웹 인터페이스
 
-#### 24. 데이터베이스 API들
+#### 30. 데이터베이스 API들
 ```http
 GET /db-viewer/api/stats     # 통계
 GET /db-viewer/api/users     # 사용자 데이터
@@ -625,7 +828,34 @@ curl -X POST http://localhost:8002/api/fcm/test \
 # 관리자용 전체 FCM 알림 전송
 curl -X POST http://localhost:8002/api/admin/fcm/send \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"title": "기상 특보", "body": "호우 경보 발령"}'
+
+# 시장 검색
+curl "http://localhost:8002/api/markets/search?q=동대문&limit=10"
+
+# 관심목록 조회 (인증 필요)
+curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  http://localhost:8002/api/watchlist
+
+# 관심목록에 시장 추가 (인증 필요)
+curl -X POST http://localhost:8002/api/watchlist \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"market_id": 1}'
+
+# 관심목록에서 시장 제거 (인증 필요)
+curl -X DELETE http://localhost:8002/api/watchlist/1 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 시장의 비 예보 확인
+curl "http://localhost:8002/api/markets/1/rain-forecast?hours=24"
+
+# 관리자용 수동 비 예보 알림 확인 (관리자 권한 필요)
+curl -X POST http://localhost:8002/api/admin/rain-alerts/check \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -d '{"hours": 24}'
 ```
 
 ### 2. JavaScript/Fetch로 호출
@@ -701,6 +931,35 @@ fetch('http://localhost:8002/api/fcm/test', {
 })
 .then(response => response.json())
 .then(data => console.log(data));
+
+// 시장 검색
+fetch('http://localhost:8002/api/markets/search?q=동대문&limit=10')
+  .then(response => response.json())
+  .then(data => console.log(data));
+
+// 관심목록 조회
+fetch('http://localhost:8002/api/watchlist', {
+  headers: { 'Authorization': `Bearer ${accessToken}` }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+
+// 관심목록에 시장 추가
+fetch('http://localhost:8002/api/watchlist', {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`
+  },
+  body: JSON.stringify({ market_id: 1 })
+})
+.then(response => response.json())
+.then(data => console.log(data));
+
+// 시장의 비 예보 확인
+fetch('http://localhost:8002/api/markets/1/rain-forecast?hours=24')
+  .then(response => response.json())
+  .then(data => console.log(data));
 ```
 
 ### 3. Python requests로 호출
@@ -772,24 +1031,40 @@ test_result = test_response.json()
    - access_token은 24시간, refresh_token은 30일간 유효합니다
    - 인증이 필요한 API는 `Authorization: Bearer {access_token}` 헤더를 사용합니다
 
-2. **패스워드 요구사항**: 
+2. **사용자 권한 시스템**: 
+   - `user`: 일반 사용자 (회원가입으로 생성)
+   - `admin`: 관리자 (서버 스크립트로만 생성, ID: snslab / PW: snslab@cu)
+   - 관리자 권한이 필요한 API는 별도 표시
+
+3. **관심목록 시스템**:
+   - 사용자는 여러 시장을 관심목록에 추가 가능
+   - 각 시장별로 개별 알림 설정 가능
+   - 관심 시장의 비 예보 시 자동 FCM 알림 전송
+
+4. **비 예보 알림**:
+   - 매 시간마다 자동으로 향후 24시간 비 예보 확인
+   - 강수확률 30% 이상 또는 강수형태 존재 시 알림
+   - 관심 시장 등록 사용자에게만 개별 알림 전송
+
+5. **패스워드 요구사항**: 
    - 최소 8자 이상
    - 대문자, 소문자, 숫자 포함 필수
 
-3. **CORS**: 다른 도메인에서 호출 시 CORS 설정이 필요할 수 있습니다
+6. **CORS**: 다른 도메인에서 호출 시 CORS 설정이 필요할 수 있습니다
 
-4. **Rate Limit**: 기상청 API 호출 제한이 있으므로 너무 자주 호출하지 마세요
+7. **Rate Limit**: 기상청 API 호출 제한이 있으므로 너무 자주 호출하지 마세요
 
-5. **에러 처리**: 모든 API는 실패 시 `{"error": "메시지"}` 형태로 응답합니다
+8. **에러 처리**: 모든 API는 실패 시 `{"error": "메시지"}` 형태로 응답합니다
 
-6. **FCM 설정**: 
+9. **FCM 설정**: 
    - Firebase 프로젝트 설정 및 서비스 계정 키가 필요합니다
    - 환경변수 `FIREBASE_SERVICE_ACCOUNT_KEY` 또는 `FIREBASE_SERVICE_ACCOUNT_JSON` 설정 필요
    - 클라이언트별 FCM SDK 설정은 `client_fcm_config/` 디렉토리 참조
 
-7. **날씨 알림**: 
-   - 자동 스케줄러가 심각한 날씨 조건 감지 시 FCM 알림 자동 전송
-   - 폭염(35°C 이상), 한파(-10°C 이하), 호우(10mm/h 이상), 강풍(14m/s 이상) 조건
+10. **날씨 알림**: 
+    - 자동 스케줄러가 심각한 날씨 조건 감지 시 FCM 알림 자동 전송
+    - 폭염(35°C 이상), 한파(-10°C 이하), 호우(10mm/h 이상), 강풍(14m/s 이상) 조건
+    - 관심 시장 기반 비 예보 알림 (강수확률 30% 이상)
 
 ---
 
