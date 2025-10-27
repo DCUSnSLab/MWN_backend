@@ -4,12 +4,16 @@
 
 set -e  # 오류 발생 시 스크립트 중단
 
+# Firebase 서비스 계정 키 경로 설정
+export FIREBASE_SERVICE_ACCOUNT_KEY=/app/fcm_integration/serviceAccountKey.json
+
 echo "🚀 Starting Weather Notification Backend initialization..."
 
 # 환경 변수 확인
 echo "📋 Environment variables check:"
 echo "  - DATABASE_URL: ${DATABASE_URL:-'Not set (will use default PostgreSQL)'}"
 echo "  - KMA_SERVICE_KEY: ${KMA_SERVICE_KEY:-'Not set'}"
+echo "  - FIREBASE_SERVICE_ACCOUNT_KEY: ${FIREBASE_SERVICE_ACCOUNT_KEY}"
 echo "  - FLASK_ENV: ${FLASK_ENV:-'production'}"
 
 # 데이터베이스 연결 대기 (PostgreSQL)
