@@ -5,7 +5,7 @@
 set -e  # 오류 발생 시 스크립트 중단
 
 # Firebase 서비스 계정 키 경로 설정
-export FIREBASE_SERVICE_ACCOUNT_KEY=/app/fcm_integration/serviceAccountKey.json
+export FIREBASE_SERVICE_ACCOUNT_KEY=/app/instance/serviceAccountKey.json
 
 echo "🚀 Starting Weather Notification Backend initialization..."
 
@@ -185,7 +185,6 @@ with app.app_context():
 
 # Firebase 서비스 계정 키 파일 확인
 echo "🔥 Checking Firebase configuration..."
-mv /app/instance/serviceAccountKey.json /app/fcm_integration/.
 if [ -n "${FIREBASE_SERVICE_ACCOUNT_KEY}" ]; then
     echo "  📝 Writing Firebase service account key to file..."
     echo "${FIREBASE_SERVICE_ACCOUNT_KEY}" > /app/fcm_integration/serviceAccountKey.json
