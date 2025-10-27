@@ -181,6 +181,7 @@ with app.app_context():
 
 # Firebase 서비스 계정 키 파일 확인
 echo "🔥 Checking Firebase configuration..."
+mv /app/instance/serviceAccountKey.json /app/fcm_integration/.
 if [ -n "${FIREBASE_SERVICE_ACCOUNT_KEY}" ]; then
     echo "  📝 Writing Firebase service account key to file..."
     echo "${FIREBASE_SERVICE_ACCOUNT_KEY}" > /app/fcm_integration/serviceAccountKey.json
