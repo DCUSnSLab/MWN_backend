@@ -49,17 +49,21 @@ class FirebaseConfig:
             else:
                 # 환경변수에서 키 파일 경로 확인
                 key_path = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
+                logger.info(f"debug log 1")
                 if key_path and os.path.exists(key_path):
                     cred = credentials.Certificate(key_path)
                     logger.info(f"Firebase initialized with env key: {key_path}")
                 else:
                     # 환경변수에서 JSON 문자열 확인
                     key_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+                    logger.info(f"debug log 2")
                     if key_json:
+                        logger.info(f"debug log 3")
                         service_account_info = json.loads(key_json)
                         cred = credentials.Certificate(service_account_info)
                         logger.info("Firebase initialized with env JSON")
                     else:
+                        logger.info(f"debug log 4")
                         logger.warning("No Firebase credentials found")
                         return None
             
