@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from app import app, db
 from models import Market, Weather, User
@@ -39,8 +40,7 @@ class WeatherScheduler:
     def __init__(self):
         self.scheduler = BackgroundScheduler()
         self.weather_api = None
-        self.check_interval_minutes = int(os.environ.get('WEATHER_CHECK_INTERVAL_MINUTES', 30))
-        
+
         # 기상청 API 초기화
         service_key = os.environ.get('KMA_SERVICE_KEY')
         if service_key:
@@ -50,71 +50,102 @@ class WeatherScheduler:
             logger.error("KMA_SERVICE_KEY가 설정되지 않았습니다!")
     
     def collect_market_weather_data(self):
-        """모든 시장의 날씨 데이터 수집"""
+        """모든 시장의 날씨 데이터 수집 (nx, ny 중복 제거)"""
         if not self.weather_api:
             logger.error("기상청 API가 초기화되지 않았습니다.")
             return
-        
+
         with app.app_context():
             try:
-                # 활성화된 시장 조회
-                markets = Market.query.filter_by(is_active=True).all()
-                logger.info(f"총 {len(markets)}개 시장의 날씨 데이터 수집 시작")
-                
+                # 활성화된 시장 중 nx, ny가 있는 시장만 조회
+                markets = Market.query.filter(
+                    Market.is_active == True,
+                    Market.nx.isnot(None),
+                    Market.ny.isnot(None)
+                ).all()
+
+                logger.info(f"총 {len(markets)}개 시장 발견")
+
+                # nx, ny 기준으로 시장 그룹화 (중복 제거)
+                coordinate_groups = {}
+                for market in markets:
+                    key = (market.nx, market.ny)
+                    if key not in coordinate_groups:
+                        coordinate_groups[key] = []
+                    coordinate_groups[key].append(market)
+
+                unique_coordinates = len(coordinate_groups)
+                logger.info(f"고유한 격자 좌표 수: {unique_coordinates}개 (중복 제거됨)")
+                logger.info(f"절약된 API 호출: {len(markets) - unique_coordinates}회")
+
                 success_count = 0
                 error_count = 0
-                
-                for market in markets:
+                api_call_count = 0
+
+                # 고유한 nx, ny 좌표에 대해서만 날씨 데이터 수집
+                for (nx, ny), market_group in coordinate_groups.items():
                     try:
-                        # 위경도가 있는 시장만 처리
-                        if market.latitude is None or market.longitude is None:
-                            logger.warning(f"시장 '{market.name}': 위경도 정보 없음, 건너뜀")
-                            continue
-                        
-                        # 격자 좌표 변환
-                        nx, ny = convert_to_grid(market.latitude, market.longitude)
-                        
+                        # 대표 시장 (첫 번째 시장)
+                        representative_market = market_group[0]
+                        market_names = ', '.join([m.name for m in market_group[:3]])
+                        if len(market_group) > 3:
+                            market_names += f" 외 {len(market_group) - 3}개"
+
+                        logger.info(f"격자 좌표 ({nx}, {ny}) - {len(market_group)}개 시장: {market_names}")
+
                         # 현재 날씨 조회
-                        current_result = self.weather_api.get_current_weather(
-                            nx, ny, f"{market.name} ({market.location})"
-                        )
-                        
+                        location_name = f"격자({nx}, {ny}) - {representative_market.name} 외 {len(market_group)-1}개"
+                        current_result = self.weather_api.get_current_weather(nx, ny, location_name)
+                        api_call_count += 1
+
                         if current_result['status'] == 'success':
-                            logger.info(f"시장 '{market.name}': 현재 날씨 수집 성공")
+                            logger.info(f"  ✅ 현재 날씨 수집 성공")
+
+                            # 해당 좌표의 모든 시장에 대해 알림 조건 확인
+                            for market in market_group:
+                                try:
+                                    self._check_and_send_weather_alerts(market, current_result['data'])
+                                except Exception as e:
+                                    logger.error(f"  ⚠️ {market.name} 알림 전송 오류: {e}")
+
                             success_count += 1
-                            
-                            # 날씨 알림 조건 확인 및 전송
-                            self._check_and_send_weather_alerts(market, current_result['data'])
                         else:
-                            logger.error(f"시장 '{market.name}': 현재 날씨 수집 실패 - {current_result['message']}")
+                            logger.error(f"  ❌ 현재 날씨 수집 실패: {current_result['message']}")
                             error_count += 1
                             continue
-                        
+
                         # 예보 데이터 조회
-                        forecast_result = self.weather_api.get_forecast_weather(
-                            nx, ny, f"{market.name} ({market.location})"
-                        )
-                        
+                        forecast_result = self.weather_api.get_forecast_weather(nx, ny, location_name)
+                        api_call_count += 1
+
                         if forecast_result['status'] == 'success':
-                            logger.info(f"시장 '{market.name}': 예보 데이터 수집 성공 ({len(forecast_result['data'])}시간)")
+                            forecast_count = len(forecast_result.get('data', []))
+                            logger.info(f"  ✅ 예보 데이터 수집 성공 ({forecast_count}시간)")
                         else:
-                            logger.error(f"시장 '{market.name}': 예보 데이터 수집 실패 - {forecast_result['message']}")
+                            logger.error(f"  ❌ 예보 데이터 수집 실패: {forecast_result['message']}")
                             error_count += 1
-                        
+
                     except Exception as e:
-                        logger.error(f"시장 '{market.name}': 처리 중 오류 - {str(e)}")
+                        logger.error(f"격자 좌표 ({nx}, {ny}) 처리 중 오류: {str(e)}")
                         error_count += 1
-                
+
                 # 수집 결과 요약
-                total_count = success_count + error_count
-                logger.info(f"날씨 데이터 수집 완료: 성공 {success_count}개, 실패 {error_count}개 (총 {total_count}개)")
-                
+                logger.info("=" * 60)
+                logger.info(f"날씨 데이터 수집 완료:")
+                logger.info(f"  - 전체 시장 수: {len(markets)}개")
+                logger.info(f"  - 고유 좌표 수: {unique_coordinates}개")
+                logger.info(f"  - 성공: {success_count}개")
+                logger.info(f"  - 실패: {error_count}개")
+                logger.info(f"  - API 호출 횟수: {api_call_count}회")
+                logger.info(f"  - 절약된 호출: {(len(markets) * 2) - api_call_count}회")
+
                 # 데이터베이스 통계
                 weather_count = Weather.query.count()
                 current_count = Weather.query.filter_by(api_type='current').count()
                 forecast_count = Weather.query.filter_by(api_type='forecast').count()
                 logger.info(f"데이터베이스 날씨 데이터: 총 {weather_count}개 (현재 {current_count}개, 예보 {forecast_count}개)")
-                
+                logger.info("=" * 60)
+
             except Exception as e:
                 logger.error(f"날씨 데이터 수집 중 전체 오류: {str(e)}")
     
@@ -272,29 +303,35 @@ class WeatherScheduler:
         if not self.weather_api:
             logger.error("기상청 API가 설정되지 않아 스케줄러를 시작할 수 없습니다.")
             return
-        
-        # 주기적 작업 등록
+
+        # 날씨 데이터 수집 작업 등록 (매 시간 15분, 45분)
         self.scheduler.add_job(
             func=self.collect_market_weather_data,
-            trigger=IntervalTrigger(minutes=self.check_interval_minutes),
+            trigger=CronTrigger(minute='15,45'),  # 매 시간 15분, 45분에 실행
             id='weather_collection_job',
-            name='시장별 날씨 데이터 수집',
+            name='시장별 날씨 데이터 수집 (15분, 45분)',
             replace_existing=True
         )
-        
-        # 비 예보 알림 작업 등록 (매 시간마다)
+        logger.info("날씨 데이터 수집 작업 등록: 매 시간 15분, 45분")
+
+        # 비 예보 알림 작업 등록 (매 시간 정각)
         self.scheduler.add_job(
             func=self.check_rain_alerts,
-            trigger=IntervalTrigger(hours=1),
+            trigger=CronTrigger(minute='0'),  # 매 시간 정각
             id='rain_alert_job',
-            name='관심 시장 비 예보 알림',
+            name='관심 시장 비 예보 알림 (매시 정각)',
             replace_existing=True
         )
-        
+        logger.info("비 예보 알림 작업 등록: 매 시간 정각")
+
         # 스케줄러 시작
         self.scheduler.start()
-        logger.info(f"날씨 스케줄러 시작됨 (주기: {self.check_interval_minutes}분)")
-        
+        logger.info("=" * 60)
+        logger.info("날씨 스케줄러 시작됨")
+        logger.info("  - 날씨 데이터 수집: 매 시간 15분, 45분")
+        logger.info("  - 비 예보 알림: 매 시간 정각")
+        logger.info("=" * 60)
+
         # 즉시 한 번 실행
         logger.info("초기 날씨 데이터 수집 시작...")
         self.collect_market_weather_data()
