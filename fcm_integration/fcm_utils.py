@@ -133,35 +133,78 @@ class FCMService:
         try:
             # 알림 메시지 구성
             notification = messaging.Notification(title=title, body=body)
-            
-            # 멀티캐스트 메시지 생성
-            message = messaging.MulticastMessage(
-                notification=notification,
-                data=data or {},
-                tokens=tokens
+
+            # Android 설정
+            android_config = messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    icon='ic_notification',
+                    color='#FF6B35',
+                    sound='default',
+                    click_action='FLUTTER_NOTIFICATION_CLICK'
+                )
             )
-            
-            # 메시지 전송
-            response = messaging.send_multicast(message)
-            
-            # 실패한 토큰들 로깅
-            if response.failure_count > 0:
-                failed_tokens = []
-                for idx, resp in enumerate(response.responses):
-                    if not resp.success:
-                        failed_tokens.append(tokens[idx])
-                        logger.warning(f"Failed to send to token {tokens[idx]}: {resp.exception}")
-            
-            logger.info(f"Multicast notification sent: {response.success_count} success, {response.failure_count} failure")
-            
+
+            # iOS 설정
+            apns_config = messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(
+                            title=title,
+                            body=body
+                        ),
+                        sound='default',
+                        badge=1
+                    )
+                )
+            )
+
+            # 개별 전송 (batch API 404 오류 회피)
+            # firebase-admin 6.5.0에서 send_all()도 /batch를 사용하므로 개별 전송 필요
+            success_count = 0
+            failure_count = 0
+            failed_tokens = []
+
+            for token in tokens:
+                try:
+                    message = messaging.Message(
+                        notification=notification,
+                        data=data or {},
+                        token=token,
+                        android=android_config,
+                        apns=apns_config
+                    )
+
+                    # 개별 전송
+                    response = messaging.send(message)
+                    success_count += 1
+                    logger.debug(f"Successfully sent to token: {token[:20]}...")
+
+                except messaging.UnregisteredError:
+                    failure_count += 1
+                    failed_tokens.append(token)
+                    logger.warning(f"FCM token is unregistered: {token[:20]}...")
+                except messaging.SenderIdMismatchError:
+                    failure_count += 1
+                    failed_tokens.append(token)
+                    logger.error(f"FCM sender ID mismatch: {token[:20]}...")
+                except Exception as e:
+                    failure_count += 1
+                    failed_tokens.append(token)
+                    logger.warning(f"Failed to send to token {token[:20]}...: {type(e).__name__}: {e}")
+
+            logger.info(f"Multicast notification sent individually: {success_count} success, {failure_count} failure out of {len(tokens)} tokens")
+
             return {
-                "success_count": response.success_count,
-                "failure_count": response.failure_count,
-                "failed_tokens": failed_tokens if response.failure_count > 0 else []
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "failed_tokens": failed_tokens
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to send multicast notification: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"success_count": 0, "failure_count": len(tokens)}
     
     def send_to_topic(self, 

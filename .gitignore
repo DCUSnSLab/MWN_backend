@@ -163,7 +163,7 @@ ehthumbs.db
 Thumbs.db
 
 # Firebase credentials (보안 중요!)
-firebase-service-account.json
+serviceAccountKey.json
 firebase-adminsdk-*.json
 google-services.json
 GoogleService-Info.plist
