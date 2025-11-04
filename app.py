@@ -2,7 +2,15 @@ from flask import Flask, request, jsonify
 from flask_migrate import Migrate
 from datetime import datetime
 import os
+import logging
 from database import db
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.DEBUG if os.environ.get('FLASK_ENV') == 'development' else logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
