@@ -894,6 +894,41 @@ def api_damage():
     damages = DamageStatus.query.all()
     return jsonify([damage.to_dict() for damage in damages])
 
+def init_scheduler():
+    """스케줄러 초기화 및 시작"""
+    try:
+        from weather_scheduler import weather_scheduler
+
+        # 이미 실행 중인지 확인
+        if weather_scheduler.scheduler.running:
+            logger.info("Weather scheduler is already running")
+            return
+
+        logger.info("Starting weather scheduler...")
+        from weather_scheduler import start_weather_scheduler
+        start_weather_scheduler()
+        logger.info("Weather scheduler started successfully!")
+    except Exception as e:
+        logger.error(f"Failed to start weather scheduler: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+# 스케줄러 자동 시작 플래그
+_scheduler_initialized = False
+
+def ensure_scheduler_running():
+    """스케줄러가 실행되도록 보장"""
+    global _scheduler_initialized
+    if not _scheduler_initialized:
+        with app.app_context():
+            init_scheduler()
+        _scheduler_initialized = True
+
+# Flask 앱 시작 시 스케줄러 자동 시작
+# 개발 환경에서 reloader를 사용할 때 중복 실행 방지
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('WERKZEUG_RUN_MAIN') is None:
+    ensure_scheduler_running()
+
 if __name__ == '__main__':
     with app.app_context():
         # Import models here to ensure they are registered with SQLAlchemy

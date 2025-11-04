@@ -229,12 +229,19 @@ echo "🎉 Initialization completed successfully!"
 echo ""
 echo "📋 Summary:"
 echo "  - Database connection: ✅"
-echo "  - Database tables: ✅" 
+echo "  - Database tables: ✅"
 echo "  - Admin account: ✅"
 echo "  - Market data: ✅"
 echo "  - Health check: ✅"
 echo ""
-echo "🚀 Starting Flask application..."
 
-# Flask 애플리케이션 시작
+# 스케줄러 상태 확인 메시지
+echo "⏰ Weather scheduler will auto-start with Flask application"
+echo "   - Weather data collection: Every hour at :15 and :45"
+echo "   - Rain forecast alerts: Every hour at :00"
+echo ""
+
+echo "🚀 Starting Flask application with weather scheduler..."
+
+# Flask 애플리케이션 시작 (스케줄러가 자동으로 시작됨)
 exec python app.py
