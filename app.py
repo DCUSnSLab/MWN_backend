@@ -840,6 +840,59 @@ def get_market_rain_forecast(market_id):
     except Exception as e:
         return jsonify({'error': f'비 예보 확인 실패: {str(e)}'}), 500
 
+@app.route('/api/markets/<int:market_id>/weather-conditions', methods=['GET'])
+def get_market_weather_conditions(market_id):
+    """특정 시장의 모든 날씨 조건 확인 (비, 폭염, 한파, 강풍 등)"""
+    from weather_alerts import check_market_all_conditions
+
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        result = check_market_all_conditions(market_id, hours)
+
+        if 'error' in result:
+            return jsonify(result), 404
+
+        return jsonify({
+            'status': 'success',
+            'market_id': market_id,
+            'conditions': result
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'날씨 조건 확인 실패: {str(e)}'}), 500
+
+@app.route('/api/admin/weather-alerts/check', methods=['POST'])
+def manual_weather_alert_check():
+    """관리자용 수동 모든 날씨 알림 확인 및 전송"""
+    from auth_utils import admin_required
+    from weather_alerts import check_and_send_all_weather_alerts
+
+    @admin_required
+    def _manual_weather_alert_check(current_user):
+        try:
+            data = request.get_json() or {}
+            hours = data.get('hours', 24)
+
+            result = check_and_send_all_weather_alerts(hours)
+
+            if result.get('success'):
+                return jsonify({
+                    'status': 'success',
+                    'message': f'날씨 알림 확인 완료',
+                    'result': result
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': '날씨 알림 확인 실패',
+                    'error': result.get('error')
+                }), 500
+
+        except Exception as e:
+            return jsonify({'error': f'날씨 알림 확인 실패: {str(e)}'}), 500
+
+    return _manual_weather_alert_check()
+
 # 웹 데이터베이스 뷰어 라우트들 추가
 @app.route('/db-viewer')
 def db_viewer():

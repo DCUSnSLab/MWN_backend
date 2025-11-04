@@ -183,6 +183,71 @@ with app.app_context():
         exit(1)
 "
 
+# 관리자 계정에 모든 시장 관심 등록
+echo "⭐ Registering all markets as admin's watchlist..."
+python -c "
+from app import app, db
+from models import User, Market, UserMarketInterest
+
+with app.app_context():
+    try:
+        admin_email = 'snslab@gmail.com'
+
+        # 관리자 계정 조회
+        admin_user = User.query.filter_by(email=admin_email).first()
+
+        if not admin_user:
+            print('  ⚠️ Admin account not found. Skipping watchlist setup.')
+        else:
+            # 모든 활성 시장 조회
+            all_markets = Market.query.filter_by(is_active=True).all()
+
+            if not all_markets:
+                print('  ⚠️ No markets found in database. Skipping watchlist setup.')
+            else:
+                print(f'  📊 Found {len(all_markets)} markets')
+
+                # 기존 관심시장 조회
+                existing_interests = UserMarketInterest.query.filter_by(
+                    user_id=admin_user.id
+                ).all()
+                existing_market_ids = {interest.market_id for interest in existing_interests}
+
+                print(f'  📋 Admin already has {len(existing_market_ids)} markets in watchlist')
+
+                # 새로 추가할 시장 필터링
+                new_count = 0
+                for market in all_markets:
+                    if market.id not in existing_market_ids:
+                        interest = UserMarketInterest(
+                            user_id=admin_user.id,
+                            market_id=market.id,
+                            is_active=True,
+                            notification_enabled=True
+                        )
+                        db.session.add(interest)
+                        new_count += 1
+
+                        # 100개마다 중간 커밋
+                        if new_count % 100 == 0:
+                            db.session.commit()
+                            print(f'  💾 Registered {new_count} new markets...')
+
+                # 최종 커밋
+                db.session.commit()
+
+                total_interests = len(existing_market_ids) + new_count
+                print(f'  ✅ Admin watchlist setup complete!')
+                print(f'     - New markets added: {new_count}')
+                print(f'     - Total markets in watchlist: {total_interests}')
+
+    except Exception as e:
+        print(f'  ❌ Failed to setup admin watchlist: {e}')
+        import traceback
+        traceback.print_exc()
+        exit(1)
+"
+
 # Firebase 서비스 계정 키 파일 확인
 echo "🔥 Checking Firebase configuration..."
 if [ -n "${FIREBASE_SERVICE_ACCOUNT_KEY}" ]; then
@@ -232,13 +297,14 @@ echo "  - Database connection: ✅"
 echo "  - Database tables: ✅"
 echo "  - Admin account: ✅"
 echo "  - Market data: ✅"
+echo "  - Admin watchlist: ✅"
 echo "  - Health check: ✅"
 echo ""
 
 # 스케줄러 상태 확인 메시지
 echo "⏰ Weather scheduler will auto-start with Flask application"
 echo "   - Weather data collection: Every hour at :15 and :45"
-echo "   - Rain forecast alerts: Every hour at :00"
+echo "   - Weather alerts (rain/heat/cold/wind): Every hour at :00"
 echo ""
 
 echo "🚀 Starting Flask application with weather scheduler..."
