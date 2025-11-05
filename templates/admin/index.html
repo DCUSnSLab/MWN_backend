@@ -1,0 +1,180 @@
+{% extends 'admin/master.html' %}
+
+{% block body %}
+<div class="container-fluid">
+    <div class="admin-header">
+        <h1>📊 관리자 대시보드</h1>
+        <p class="admin-user-info">환영합니다, {{ session.get('admin_user_email') }}님</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <h2>📈 시스템 통계</h2>
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <h3>{{ stats.total_users }}</h3>
+                <p>총 사용자 수</p>
+                <small class="text-muted">활성: {{ stats.active_users }} | 관리자: {{ stats.admin_users }}</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <h3>{{ stats.total_markets }}</h3>
+                <p>총 시장 수</p>
+                <small class="text-muted">활성: {{ stats.active_markets }}</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <h3>{{ stats.total_weather_records }}</h3>
+                <p>날씨 데이터</p>
+                <small class="text-muted">총 수집 레코드</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <h3>{{ stats.total_watchlist_items }}</h3>
+                <p>관심시장 등록</p>
+                <small class="text-muted">활성: {{ stats.active_watchlist_items }}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h3>🏆 인기 시장 TOP 5</h3>
+            <div class="card">
+                <div class="card-body">
+                    {% if top_markets %}
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>순위</th>
+                                    <th>시장명</th>
+                                    <th>관심 등록 수</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for market in top_markets %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ market[0] }}</td>
+                                    <td><span class="badge bg-primary">{{ market[1] }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">데이터가 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <h3>🌤️ 최근 수집 날씨 데이터</h3>
+            <div class="card">
+                <div class="card-body">
+                    {% if latest_weather %}
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>지역</th>
+                                    <th>타입</th>
+                                    <th>기온</th>
+                                    <th>시간</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for weather in latest_weather %}
+                                <tr>
+                                    <td>{{ weather.location_name }}</td>
+                                    <td>
+                                        {% if weather.api_type == 'current' %}
+                                            <span class="badge bg-success">현재</span>
+                                        {% else %}
+                                            <span class="badge bg-info">예보</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ weather.temp }}°C</td>
+                                    <td><small>{{ weather.created_at.strftime('%H:%M') }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">데이터가 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <h3>🔗 빠른 링크</h3>
+            <div class="card">
+                <div class="card-body">
+                    <a href="{{ url_for('user.index_view') }}" class="btn btn-outline-primary me-2">
+                        👥 사용자 관리
+                    </a>
+                    <a href="{{ url_for('market.index_view') }}" class="btn btn-outline-success me-2">
+                        🏪 시장 관리
+                    </a>
+                    <a href="{{ url_for('weather.index_view') }}" class="btn btn-outline-info me-2">
+                        🌤️ 날씨 데이터
+                    </a>
+                    <a href="{{ url_for('system_control.index') }}" class="btn btn-outline-warning me-2">
+                        ⚙️ 시스템 제어
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stat-card {
+        background: white;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-card h3 {
+        font-size: 2rem;
+        margin: 0;
+        color: #667eea;
+    }
+    .stat-card p {
+        margin: 0.5rem 0 0 0;
+        color: #495057;
+        font-weight: 500;
+    }
+    .admin-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border-radius: 0.5rem;
+    }
+    .admin-header h1 {
+        margin: 0;
+        font-size: 1.8rem;
+    }
+    .admin-user-info {
+        margin: 0.5rem 0 0 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+</style>
+{% endblock %}

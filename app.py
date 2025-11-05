@@ -29,6 +29,10 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 db.init_app(app)
 migrate = Migrate(app, db)
 
+# Flask-Admin 초기화 (모델을 import하기 전에 admin_panel을 import)
+from admin_panel import init_admin
+admin = init_admin(app, db)
+
 # Models will be imported later to avoid circular import
 
 @app.route('/health')

@@ -1,0 +1,205 @@
+{% extends 'admin/master.html' %}
+
+{% block body %}
+<div class="container-fluid">
+    <div class="admin-header">
+        <h1>⚙️ 시스템 제어</h1>
+        <p class="admin-user-info">스케줄러 관리 및 수동 작업 실행</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row">
+        <div class="col-md-6">
+            <h3>📊 스케줄러 상태</h3>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>실행 상태:</strong>
+                        {% if scheduler_status.scheduler_running %}
+                            <span class="badge bg-success">✅ 실행 중</span>
+                        {% else %}
+                            <span class="badge bg-danger">❌ 중지됨</span>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <strong>등록된 작업 수:</strong>
+                        <span class="badge bg-info">{{ scheduler_status.job_count }}개</span>
+                    </div>
+
+                    {% if scheduler_status.jobs %}
+                        <h5 class="mt-4">등록된 작업 목록</h5>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>작업명</th>
+                                    <th>다음 실행</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in scheduler_status.jobs %}
+                                <tr>
+                                    <td>{{ job.name }}</td>
+                                    <td>
+                                        {% if job.next_run %}
+                                            <small class="text-muted">{{ job.next_run }}</small>
+                                        {% else %}
+                                            <small class="text-danger">예약 없음</small>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+
+                    <div class="mt-4">
+                        <h5>스케줄러 제어</h5>
+                        <form method="POST" action="{{ url_for('system_control.start_scheduler') }}" class="d-inline">
+                            <button type="submit" class="btn btn-success"
+                                    {% if scheduler_status.scheduler_running %}disabled{% endif %}>
+                                ▶️ 시작
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('system_control.stop_scheduler') }}" class="d-inline">
+                            <button type="submit" class="btn btn-danger"
+                                    {% if not scheduler_status.scheduler_running %}disabled{% endif %}>
+                                ⏸️ 중지
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <h3>📈 날씨 데이터 통계</h3>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <table class="table">
+                        <tr>
+                            <th>총 날씨 레코드</th>
+                            <td><span class="badge bg-primary">{{ weather_stats.total_weather_records }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>현재 날씨 데이터</th>
+                            <td><span class="badge bg-success">{{ weather_stats.current_weather_records }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>예보 데이터</th>
+                            <td><span class="badge bg-info">{{ weather_stats.forecast_weather_records }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>활성 시장 수</th>
+                            <td><span class="badge bg-warning">{{ weather_stats.active_markets }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>좌표 보유 시장</th>
+                            <td><span class="badge bg-secondary">{{ weather_stats.markets_with_coordinates }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>최근 업데이트</th>
+                            <td>
+                                {% if weather_stats.latest_weather_update %}
+                                    <small class="text-muted">{{ weather_stats.latest_weather_update }}</small>
+                                {% else %}
+                                    <small class="text-danger">데이터 없음</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <h3>🛠️ 수동 작업 실행</h3>
+            <div class="card">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="control-box">
+                                <h5>🌤️ 날씨 데이터 수집</h5>
+                                <p class="text-muted">모든 시장의 현재 날씨와 예보 데이터를 즉시 수집합니다.</p>
+                                <form method="POST" action="{{ url_for('system_control.collect_weather') }}">
+                                    <button type="submit" class="btn btn-primary">
+                                        🔄 지금 수집 시작
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <div class="control-box">
+                                <h5>🔔 날씨 알림 전송</h5>
+                                <p class="text-muted">관심시장 기반 날씨 알림을 즉시 확인하고 전송합니다.</p>
+                                <form method="POST" action="{{ url_for('system_control.send_weather_alert') }}">
+                                    <div class="input-group mb-2">
+                                        <input type="number" name="hours" value="24" min="1" max="72"
+                                               class="form-control" placeholder="시간">
+                                        <span class="input-group-text">시간 이내</span>
+                                    </div>
+                                    <button type="submit" class="btn btn-warning">
+                                        📤 알림 전송
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-info mt-4">
+        <h5>ℹ️ 참고사항</h5>
+        <ul>
+            <li><strong>날씨 데이터 수집</strong>: 매 시간 15분, 45분에 자동 실행됩니다.</li>
+            <li><strong>날씨 알림 전송</strong>: 매 시간 정각에 자동으로 실행됩니다.</li>
+            <li><strong>알림 조건</strong>: 비/눈(30%), 폭염(33°C↑), 한파(-12°C↓), 강풍(14m/s↑)</li>
+            <li>수동 실행은 스케줄러와 별도로 즉시 작업을 수행합니다.</li>
+        </ul>
+    </div>
+</div>
+
+<style>
+    .control-box {
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        height: 100%;
+        background: #f8f9fa;
+    }
+    .control-box h5 {
+        color: #495057;
+        margin-bottom: 0.5rem;
+    }
+    .admin-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border-radius: 0.5rem;
+    }
+    .admin-header h1 {
+        margin: 0;
+        font-size: 1.8rem;
+    }
+    .admin-user-info {
+        margin: 0.5rem 0 0 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+</style>
+{% endblock %}

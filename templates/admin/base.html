@@ -1,0 +1,64 @@
+{% extends 'admin/master.html' %}
+
+{% block head_css %}
+{{ super() }}
+<style>
+    .admin-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem;
+        margin-bottom: 2rem;
+        border-radius: 0.5rem;
+    }
+    .admin-header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+    .admin-user-info {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    .stat-card {
+        background: white;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+    }
+    .stat-card h3 {
+        font-size: 2rem;
+        margin: 0;
+        color: #667eea;
+    }
+    .stat-card p {
+        margin: 0;
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    .navbar-brand {
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block brand %}
+<a class="navbar-brand" href="{{ url_for('admin.index') }}">
+    🌤️ 날씨 알림 시스템 관리자
+</a>
+{% endblock %}
+
+{% block nav_right %}
+{{ super() }}
+{% if session.get('admin_user_email') %}
+<li class="nav-item">
+    <span class="navbar-text">
+        👤 {{ session.get('admin_user_email') }}
+    </span>
+</li>
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('admin.logout_view') }}">
+        로그아웃
+    </a>
+</li>
+{% endif %}
+{% endblock %}
