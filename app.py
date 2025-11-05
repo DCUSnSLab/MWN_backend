@@ -999,4 +999,4 @@ if __name__ == '__main__':
         # Import models here to ensure they are registered with SQLAlchemy
         from models import User, Market, DamageStatus, Weather
         db.create_all()
-    app.run(debug=True, host='0.0.0.0', port=8002)
+    app.run(debug=True, host='0.0.0.0', port=80)

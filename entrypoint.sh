@@ -269,7 +269,7 @@ import time
 import threading
 
 def run_app():
-    app.run(host='0.0.0.0', port=8002, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
 
 # Flask 앱을 백그라운드에서 시작
 server_thread = threading.Thread(target=run_app, daemon=True)
@@ -279,7 +279,7 @@ server_thread.start()
 time.sleep(3)
 
 try:
-    response = requests.get('http://localhost:8002/health', timeout=5)
+    response = requests.get('http://localhost:80/health', timeout=5)
     if response.status_code == 200:
         print('✅ Health check passed!')
     else:
