@@ -344,9 +344,12 @@ class WeatherScheduler:
         logger.info("    * 알림 조건: 비/눈, 폭염(33°C↑), 한파(-12°C↓), 강풍(14m/s↑)")
         logger.info("=" * 60)
 
-        # 즉시 한 번 실행
-        logger.info("초기 날씨 데이터 수집 시작...")
-        self.collect_market_weather_data()
+        # 다음 예정된 수집 시간 표시
+        jobs = self.scheduler.get_jobs()
+        for job in jobs:
+            if job.next_run_time:
+                logger.info(f"다음 {job.name}: {job.next_run_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info("=" * 60)
     
     def stop(self):
         """스케줄러 정지"""
