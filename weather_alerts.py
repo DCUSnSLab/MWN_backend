@@ -12,8 +12,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from weather_api import KMAWeatherAPI
-from models import Market, User, UserMarketInterest
+from models import Market, User, UserMarketInterest, MarketAlarmLog
 from fcm_integration.fcm_utils import fcm_service
+from database import db
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -441,8 +442,78 @@ class WeatherAlertSystem:
             )
 
             success_count = result.get('success_count', 0) if result else 0
+            failure_count = result.get('failure_count', 0) if result else len(valid_users)
 
             logger.info(f"{market.name} 날씨 알림: {len(valid_users)}명 중 {success_count}명에게 전송 성공")
+
+            # 데이터베이스에 알림 로그 기록
+            try:
+                # 알림 타입 결정 (우선순위: high_temp > low_temp > strong_wind > snow > rain)
+                alert_type = None
+                alert_data = None
+                temperature = None
+                rain_probability = None
+                wind_speed = None
+                precipitation_type = None
+                forecast_time = None
+
+                if alerts.get('high_temp'):
+                    alert_type = 'high_temp'
+                    alert_data = alerts['high_temp'][0]
+                    temperature = alert_data.get('temperature')
+                    forecast_time = alert_data.get('time_str')
+                elif alerts.get('low_temp'):
+                    alert_type = 'low_temp'
+                    alert_data = alerts['low_temp'][0]
+                    temperature = alert_data.get('temperature')
+                    forecast_time = alert_data.get('time_str')
+                elif alerts.get('strong_wind'):
+                    alert_type = 'strong_wind'
+                    alert_data = alerts['strong_wind'][0]
+                    wind_speed = alert_data.get('wind_speed')
+                    forecast_time = alert_data.get('time_str')
+                elif alerts.get('snow'):
+                    alert_type = 'snow'
+                    alert_data = alerts['snow'][0]
+                    precipitation_type = 'snow'
+                    forecast_time = alert_data.get('time_str')
+                elif alerts.get('rain'):
+                    alert_type = 'rain'
+                    alert_data = alerts['rain'][0]
+                    rain_probability = alert_data.get('pop')
+                    precipitation_type = alert_data.get('description')
+                    forecast_time = alert_data.get('time_str')
+
+                # MarketAlarmLog 레코드 생성
+                if alert_type and alert_data:
+                    alarm_log = MarketAlarmLog(
+                        market_id=market.id,
+                        alert_type=alert_type,
+                        alert_title=title,
+                        alert_body=body,
+                        total_users=len(valid_users),
+                        success_count=success_count,
+                        failure_count=failure_count,
+                        weather_data=alerts,  # JSON 필드로 전체 알림 데이터 저장
+                        temperature=temperature,
+                        rain_probability=rain_probability,
+                        wind_speed=wind_speed,
+                        precipitation_type=precipitation_type,
+                        forecast_time=forecast_time,
+                        checked_hours=weather_info.get('checked_hours')
+                    )
+
+                    db.session.add(alarm_log)
+                    db.session.commit()
+
+                    logger.info(f"{market.name} 알림 로그 데이터베이스 기록 완료 (ID: {alarm_log.id})")
+                else:
+                    logger.warning(f"{market.name} 알림 타입을 결정할 수 없어 로그를 기록하지 못했습니다.")
+
+            except Exception as log_error:
+                logger.error(f"{market.name} 알림 로그 데이터베이스 기록 실패: {log_error}")
+                db.session.rollback()
+                # 로그 기록 실패는 전체 프로세스를 중단하지 않음
 
             return {
                 'success': True,

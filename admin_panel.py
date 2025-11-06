@@ -16,7 +16,7 @@ from datetime import datetime
 import logging
 
 from database import db
-from models import User, Market, Weather, DamageStatus, UserMarketInterest
+from models import User, Market, Weather, DamageStatus, UserMarketInterest, MarketAlarmLog
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +309,65 @@ class UserMarketInterestAdminView(SecureModelView):
             flash(f'오류 발생: {str(e)}', 'error')
 
 
+class MarketAlarmLogAdminView(SecureModelView):
+    """시장 알림 이력 뷰 (읽기 전용)"""
+
+    can_create = False
+    can_edit = False
+    can_delete = False
+
+    column_list = ['id', 'market', 'alert_type', 'alert_title', 'total_users', 'success_count',
+                   'failure_count', 'forecast_time', 'created_at']
+    column_searchable_list = ['alert_title', 'alert_body', 'forecast_time']
+    column_filters = ['alert_type', 'created_at', 'market_id', 'forecast_time']
+    column_sortable_list = ['id', 'created_at', 'alert_type', 'total_users', 'success_count']
+    column_default_sort = ('created_at', True)
+
+    column_labels = {
+        'id': 'ID',
+        'market': '시장',
+        'alert_type': '알림 유형',
+        'alert_title': '알림 제목',
+        'alert_body': '알림 내용',
+        'total_users': '전체 사용자',
+        'success_count': '성공',
+        'failure_count': '실패',
+        'temperature': '기온(°C)',
+        'rain_probability': '강수확률(%)',
+        'wind_speed': '풍속(m/s)',
+        'precipitation_type': '강수형태',
+        'forecast_time': '예보시간',
+        'checked_hours': '예보범위(시간)',
+        'weather_data': '날씨 데이터',
+        'created_at': '전송시간'
+    }
+
+    column_formatters = {
+        'market': lambda v, c, m, n: m.market.name if m.market else 'N/A',
+        'alert_type': lambda v, c, m, n: {
+            'rain': '🌧️ 강수',
+            'high_temp': '🌡️ 폭염',
+            'low_temp': '❄️ 한파',
+            'strong_wind': '💨 강풍',
+            'snow': '⛄ 적설'
+        }.get(m.alert_type, m.alert_type),
+        'alert_title': lambda v, c, m, n: m.alert_title[:50] + '...' if len(m.alert_title) > 50 else m.alert_title,
+    }
+
+    column_descriptions = {
+        'alert_type': '알림 유형 (rain: 강수, high_temp: 폭염, low_temp: 한파, strong_wind: 강풍, snow: 적설)',
+        'total_users': '알림 대상 사용자 수',
+        'success_count': 'FCM 전송 성공 수',
+        'failure_count': 'FCM 전송 실패 수',
+    }
+
+    # 상세 보기에서 표시할 필드
+    column_details_list = ['id', 'market', 'alert_type', 'alert_title', 'alert_body',
+                          'total_users', 'success_count', 'failure_count',
+                          'temperature', 'rain_probability', 'wind_speed', 'precipitation_type',
+                          'forecast_time', 'checked_hours', 'weather_data', 'created_at']
+
+
 class SystemControlView(BaseView):
     """시스템 제어 뷰 (스케줄러, 알림 등)"""
 
@@ -421,6 +480,8 @@ def init_admin(app, db):
     admin.add_view(WeatherAdminView(Weather, db.session, name='날씨 데이터', category='날씨'))
     admin.add_view(UserMarketInterestAdminView(UserMarketInterest, db.session,
                                                name='관심시장 관리', category='사용자'))
+    admin.add_view(MarketAlarmLogAdminView(MarketAlarmLog, db.session,
+                                          name='알림 이력', category='날씨'))
 
     # 시스템 제어 뷰 추가
     admin.add_view(SystemControlView(name='시스템 제어', endpoint='system_control', category='시스템'))

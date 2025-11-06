@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import logging
 from database import db
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # 로깅 설정
 logging.basicConfig(
@@ -13,6 +14,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# ProxyFix: LoadBalancer/Reverse Proxy 뒤에서 실행될 때 필요
+# X-Forwarded-* 헤더를 올바르게 처리
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,      # X-Forwarded-For
+    x_proto=1,    # X-Forwarded-Proto (http/https 판단)
+    x_host=1,     # X-Forwarded-Host
+    x_prefix=1    # X-Forwarded-Prefix
+)
 
 # Database configuration
 # PostgreSQL connection string
@@ -24,6 +35,11 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_recycle': 300,
 }
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+
+# URL 스키마 처리 (LoadBalancer 환경)
+app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME', 'http')
+# 프록시 뒤에서 실행 시 리다이렉트 URL 올바르게 생성
+app.config['APPLICATION_ROOT'] = os.environ.get('APPLICATION_ROOT', '/')
 
 # Initialize with app
 db.init_app(app)
@@ -896,6 +912,236 @@ def manual_weather_alert_check():
             return jsonify({'error': f'날씨 알림 확인 실패: {str(e)}'}), 500
 
     return _manual_weather_alert_check()
+
+# 알림 이력 관련 API
+@app.route('/api/alarm-logs', methods=['GET'])
+def get_alarm_logs():
+    """알림 이력 목록 조회 (페이지네이션 및 필터링 지원)"""
+    from auth_utils import login_required
+
+    @login_required
+    def _get_alarm_logs(current_user):
+        try:
+            # 페이지네이션 파라미터
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 20, type=int)
+
+            # 필터링 파라미터
+            market_id = request.args.get('market_id', type=int)
+            alert_type = request.args.get('alert_type', type=str)
+            start_date = request.args.get('start_date', type=str)
+            end_date = request.args.get('end_date', type=str)
+
+            # 기본 쿼리
+            query = MarketAlarmLog.query
+
+            # 일반 사용자는 자신의 관심시장 알림만 조회 가능
+            if not current_user.is_admin():
+                user_market_ids = [interest.market_id for interest in
+                                  UserMarketInterest.query.filter_by(
+                                      user_id=current_user.id,
+                                      is_active=True
+                                  ).all()]
+                query = query.filter(MarketAlarmLog.market_id.in_(user_market_ids))
+
+            # 필터 적용
+            if market_id:
+                query = query.filter_by(market_id=market_id)
+
+            if alert_type:
+                query = query.filter_by(alert_type=alert_type)
+
+            if start_date:
+                from datetime import datetime
+                start_dt = datetime.fromisoformat(start_date)
+                query = query.filter(MarketAlarmLog.created_at >= start_dt)
+
+            if end_date:
+                from datetime import datetime
+                end_dt = datetime.fromisoformat(end_date)
+                query = query.filter(MarketAlarmLog.created_at <= end_dt)
+
+            # 정렬 및 페이지네이션
+            query = query.order_by(MarketAlarmLog.created_at.desc())
+            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+            # 결과 직렬화
+            logs = []
+            for log in pagination.items:
+                log_data = {
+                    'id': log.id,
+                    'market_id': log.market_id,
+                    'market_name': log.market.name if log.market else None,
+                    'alert_type': log.alert_type,
+                    'alert_title': log.alert_title,
+                    'alert_body': log.alert_body,
+                    'total_users': log.total_users,
+                    'success_count': log.success_count,
+                    'failure_count': log.failure_count,
+                    'temperature': log.temperature,
+                    'rain_probability': log.rain_probability,
+                    'wind_speed': log.wind_speed,
+                    'precipitation_type': log.precipitation_type,
+                    'forecast_time': log.forecast_time,
+                    'checked_hours': log.checked_hours,
+                    'created_at': log.created_at.isoformat() if log.created_at else None
+                }
+                logs.append(log_data)
+
+            return jsonify({
+                'status': 'success',
+                'data': logs,
+                'pagination': {
+                    'page': pagination.page,
+                    'per_page': pagination.per_page,
+                    'total': pagination.total,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"알림 이력 조회 실패: {e}")
+            return jsonify({'error': f'알림 이력 조회 실패: {str(e)}'}), 500
+
+    return _get_alarm_logs()
+
+@app.route('/api/alarm-logs/<int:log_id>', methods=['GET'])
+def get_alarm_log_detail(log_id):
+    """특정 알림 이력 상세 조회"""
+    from auth_utils import login_required
+
+    @login_required
+    def _get_alarm_log_detail(current_user):
+        try:
+            log = MarketAlarmLog.query.get(log_id)
+
+            if not log:
+                return jsonify({'error': '알림 이력을 찾을 수 없습니다.'}), 404
+
+            # 일반 사용자는 자신의 관심시장 알림만 조회 가능
+            if not current_user.is_admin():
+                is_interested = UserMarketInterest.query.filter_by(
+                    user_id=current_user.id,
+                    market_id=log.market_id,
+                    is_active=True
+                ).first()
+
+                if not is_interested:
+                    return jsonify({'error': '접근 권한이 없습니다.'}), 403
+
+            # 상세 정보 반환
+            log_data = {
+                'id': log.id,
+                'market_id': log.market_id,
+                'market_name': log.market.name if log.market else None,
+                'alert_type': log.alert_type,
+                'alert_title': log.alert_title,
+                'alert_body': log.alert_body,
+                'total_users': log.total_users,
+                'success_count': log.success_count,
+                'failure_count': log.failure_count,
+                'weather_data': log.weather_data,  # JSON 전체 데이터
+                'temperature': log.temperature,
+                'rain_probability': log.rain_probability,
+                'wind_speed': log.wind_speed,
+                'precipitation_type': log.precipitation_type,
+                'forecast_time': log.forecast_time,
+                'checked_hours': log.checked_hours,
+                'created_at': log.created_at.isoformat() if log.created_at else None
+            }
+
+            return jsonify({
+                'status': 'success',
+                'data': log_data
+            })
+
+        except Exception as e:
+            logger.error(f"알림 이력 상세 조회 실패: {e}")
+            return jsonify({'error': f'알림 이력 상세 조회 실패: {str(e)}'}), 500
+
+    return _get_alarm_log_detail()
+
+@app.route('/api/markets/<int:market_id>/alarm-logs', methods=['GET'])
+def get_market_alarm_logs(market_id):
+    """특정 시장의 알림 이력 조회"""
+    from auth_utils import login_required
+
+    @login_required
+    def _get_market_alarm_logs(current_user):
+        try:
+            # 시장 존재 확인
+            market = Market.query.get(market_id)
+            if not market:
+                return jsonify({'error': '시장을 찾을 수 없습니다.'}), 404
+
+            # 일반 사용자는 자신의 관심시장 알림만 조회 가능
+            if not current_user.is_admin():
+                is_interested = UserMarketInterest.query.filter_by(
+                    user_id=current_user.id,
+                    market_id=market_id,
+                    is_active=True
+                ).first()
+
+                if not is_interested:
+                    return jsonify({'error': '접근 권한이 없습니다.'}), 403
+
+            # 페이지네이션 파라미터
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 20, type=int)
+            alert_type = request.args.get('alert_type', type=str)
+
+            # 쿼리
+            query = MarketAlarmLog.query.filter_by(market_id=market_id)
+
+            if alert_type:
+                query = query.filter_by(alert_type=alert_type)
+
+            query = query.order_by(MarketAlarmLog.created_at.desc())
+            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+            # 결과 직렬화
+            logs = []
+            for log in pagination.items:
+                log_data = {
+                    'id': log.id,
+                    'alert_type': log.alert_type,
+                    'alert_title': log.alert_title,
+                    'alert_body': log.alert_body,
+                    'total_users': log.total_users,
+                    'success_count': log.success_count,
+                    'failure_count': log.failure_count,
+                    'temperature': log.temperature,
+                    'rain_probability': log.rain_probability,
+                    'wind_speed': log.wind_speed,
+                    'precipitation_type': log.precipitation_type,
+                    'forecast_time': log.forecast_time,
+                    'checked_hours': log.checked_hours,
+                    'created_at': log.created_at.isoformat() if log.created_at else None
+                }
+                logs.append(log_data)
+
+            return jsonify({
+                'status': 'success',
+                'market_id': market_id,
+                'market_name': market.name,
+                'data': logs,
+                'pagination': {
+                    'page': pagination.page,
+                    'per_page': pagination.per_page,
+                    'total': pagination.total,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"시장 알림 이력 조회 실패: {e}")
+            return jsonify({'error': f'시장 알림 이력 조회 실패: {str(e)}'}), 500
+
+    return _get_market_alarm_logs()
 
 # 웹 데이터베이스 뷰어 라우트들 추가
 @app.route('/db-viewer')

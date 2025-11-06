@@ -326,3 +326,61 @@ class Weather(db.Model):
             'location_name': self.location_name,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+
+class MarketAlarmLog(db.Model):
+    """시장별 날씨 알림 전송 이력"""
+    __tablename__ = 'market_alarm_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), nullable=False)
+
+    # 알림 유형 및 내용
+    alert_type = db.Column(db.String(50), nullable=False)  # 'rain', 'high_temp', 'low_temp', 'strong_wind', 'snow'
+    alert_title = db.Column(db.String(200), nullable=False)  # 알림 제목
+    alert_body = db.Column(db.Text, nullable=False)  # 알림 내용
+
+    # 전송 결과
+    total_users = db.Column(db.Integer, default=0)  # 대상 사용자 수
+    success_count = db.Column(db.Integer, default=0)  # 전송 성공 수
+    failure_count = db.Column(db.Integer, default=0)  # 전송 실패 수
+
+    # 날씨 데이터 (알림 발생 당시의 기상 정보)
+    weather_data = db.Column(db.JSON)  # 상세 기상 정보 (JSON)
+    temperature = db.Column(db.Float)  # 기온
+    rain_probability = db.Column(db.Float)  # 강수확률
+    wind_speed = db.Column(db.Float)  # 풍속
+    precipitation_type = db.Column(db.String(20))  # 강수형태
+
+    # 메타데이터
+    forecast_time = db.Column(db.String(50))  # 예보 시간 (예: "11월 06일 15시")
+    checked_hours = db.Column(db.Integer, default=24)  # 확인한 예보 시간 범위
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # 관계
+    market = db.relationship('Market', backref=db.backref('alarm_logs', lazy='dynamic'))
+
+    def to_dict(self):
+        """딕셔너리 변환"""
+        return {
+            'id': self.id,
+            'market_id': self.market_id,
+            'market_name': self.market.name if self.market else None,
+            'alert_type': self.alert_type,
+            'alert_title': self.alert_title,
+            'alert_body': self.alert_body,
+            'total_users': self.total_users,
+            'success_count': self.success_count,
+            'failure_count': self.failure_count,
+            'weather_data': self.weather_data,
+            'temperature': self.temperature,
+            'rain_probability': self.rain_probability,
+            'wind_speed': self.wind_speed,
+            'precipitation_type': self.precipitation_type,
+            'forecast_time': self.forecast_time,
+            'checked_hours': self.checked_hours,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def __repr__(self):
+        return f'<MarketAlarmLog {self.id}: {self.market.name if self.market else "Unknown"} - {self.alert_type}>'

@@ -55,22 +55,42 @@ if not wait_for_db():
     exit(1)
 "
 
-# 데이터베이스 테이블 생성 (Flask-SQLAlchemy 사용)
-echo "🗃️ Initializing database tables..."
-python -c "
-from app import app, db
-from models import User, Market, DamageStatus, Weather
+# 데이터베이스 마이그레이션 (Flask-Migrate 사용)
+echo "🗃️ Initializing database migration..."
 
-with app.app_context():
-    try:
-        # Import all models to ensure they are registered
-        from models import User, Market, DamageStatus, Weather, UserMarketInterest
-        db.create_all()
-        print('✅ Database tables created successfully!')
-    except Exception as e:
-        print(f'❌ Failed to create database tables: {e}')
-        exit(1)
-"
+# Flask 앱 경로 설정 (flask db 명령어 사용을 위해 필요)
+export FLASK_APP=app.py
+
+# migrations 디렉토리가 없으면 초기화
+if [ ! -d "migrations" ]; then
+    echo "  📁 migrations 디렉토리가 없습니다. 마이그레이션 초기화 중..."
+    flask db init
+    echo "  ✅ 마이그레이션 초기화 완료!"
+fi
+
+# 현재 모델과 데이터베이스 스키마 비교하여 마이그레이션 생성
+echo "  🔍 모델 변경사항 확인 중..."
+flask db migrate -m "Auto-migration on startup" 2>&1 | tee /tmp/migrate_output.log
+
+# migrate 결과 확인
+if grep -q "No changes in schema detected" /tmp/migrate_output.log; then
+    echo "  ℹ️  스키마 변경사항 없음"
+elif grep -q "Generating" /tmp/migrate_output.log; then
+    echo "  📝 새로운 마이그레이션 파일 생성됨"
+else
+    echo "  ⚠️  마이그레이션 생성 결과를 확인하세요"
+fi
+
+# 마이그레이션 적용
+echo "  🚀 마이그레이션 적용 중..."
+flask db upgrade
+
+if [ $? -eq 0 ]; then
+    echo "  ✅ 데이터베이스 마이그레이션 완료!"
+else
+    echo "  ❌ 마이그레이션 적용 실패"
+    exit 1
+fi
 
 # 관리자 계정 생성
 echo "👤 Creating admin account..."
