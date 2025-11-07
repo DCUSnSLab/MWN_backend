@@ -282,14 +282,22 @@ fi
 
 # 헬스체크
 echo "🏥 Running health check..."
+
+# 환경변수에서 포트 가져오기 (기본값: 80)
+HEALTH_CHECK_PORT=${PORT:-80}
+
 python -c "
+import os
 from app import app
 import requests
 import time
 import threading
 
+# 환경변수에서 포트 가져오기
+port = int(os.environ.get('PORT', 80))
+
 def run_app():
-    app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # Flask 앱을 백그라운드에서 시작
 server_thread = threading.Thread(target=run_app, daemon=True)
@@ -299,9 +307,9 @@ server_thread.start()
 time.sleep(3)
 
 try:
-    response = requests.get('http://localhost:80/health', timeout=5)
+    response = requests.get(f'http://localhost:{port}/health', timeout=5)
     if response.status_code == 200:
-        print('✅ Health check passed!')
+        print(f'✅ Health check passed on port {port}!')
     else:
         print(f'❌ Health check failed with status code: {response.status_code}')
         exit(1)

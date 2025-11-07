@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 class SecureAdminIndexView(AdminIndexView):
     """관리자 인증이 필요한 Admin 인덱스 뷰"""
 
+    def is_visible(self):
+        """메뉴에 표시 여부"""
+        return True
+
     @expose('/')
     def index(self):
         # 로그인 체크
@@ -100,6 +104,9 @@ class SecureAdminIndexView(AdminIndexView):
 
     def inaccessible_callback(self, name, **kwargs):
         """접근 불가 시 로그인 페이지로 리다이렉트"""
+        # 이미 로그인 페이지에 있다면 리다이렉트하지 않음 (무한 루프 방지)
+        if request.endpoint == 'admin.login_view':
+            return None
         return redirect(url_for('.login_view'))
 
 

@@ -5,6 +5,10 @@ import os
 import logging
 from database import db
 from werkzeug.middleware.proxy_fix import ProxyFix
+from dotenv import load_dotenv
+
+# 환경변수 로드 (.env 파일)
+load_dotenv()
 
 # 로깅 설정
 logging.basicConfig(
@@ -1245,4 +1249,13 @@ if __name__ == '__main__':
         # Import models here to ensure they are registered with SQLAlchemy
         from models import User, Market, DamageStatus, Weather
         db.create_all()
-    app.run(debug=True, host='0.0.0.0', port=80)
+
+    # 환경변수에서 포트 설정 (기본값: 80)
+    port = int(os.environ.get('PORT', 80))
+    # 환경변수에서 호스트 설정 (기본값: 0.0.0.0)
+    host = os.environ.get('HOST', '0.0.0.0')
+    # 환경변수에서 디버그 모드 설정 (기본값: FLASK_ENV이 development이면 True)
+    debug = os.environ.get('FLASK_ENV') == 'development'
+
+    logger.info(f"Starting Flask app on {host}:{port} (debug={debug})")
+    app.run(debug=debug, host=host, port=port)
