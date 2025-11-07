@@ -157,6 +157,39 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="control-box">
+                                <h5>📢 테스트 알림 전송</h5>
+                                <p class="text-muted">선택한 시장의 관심 사용자들에게 커스텀 알림을 전송합니다.</p>
+                                <form method="POST" action="{{ url_for('system_control.send_test_notification') }}">
+                                    <div class="mb-3">
+                                        <label for="market_id" class="form-label">시장 선택</label>
+                                        <select name="market_id" id="market_id" class="form-select" required>
+                                            <option value="">-- 시장을 선택하세요 --</option>
+                                            {% for market in markets %}
+                                            <option value="{{ market.id }}">{{ market.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="title" class="form-label">알림 제목</label>
+                                        <input type="text" name="title" id="title" class="form-control"
+                                               placeholder="예: 테스트 알림" maxlength="100" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="body" class="form-label">알림 내용</label>
+                                        <textarea name="body" id="body" class="form-control" rows="3"
+                                                  placeholder="예: 시스템 테스트를 위한 알림입니다." maxlength="500" required></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-info">
+                                        📤 테스트 알림 전송
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -168,6 +201,7 @@
             <li><strong>날씨 데이터 수집</strong>: 매 시간 15분, 45분에 자동 실행됩니다.</li>
             <li><strong>날씨 알림 전송</strong>: 매 시간 정각에 자동으로 실행됩니다.</li>
             <li><strong>알림 조건</strong>: 비/눈(30%), 폭염(33°C↑), 한파(-12°C↓), 강풍(14m/s↑)</li>
+            <li><strong>테스트 알림</strong>: 선택한 시장을 관심시장으로 등록한 모든 활성 사용자에게 즉시 전송됩니다.</li>
             <li>수동 실행은 스케줄러와 별도로 즉시 작업을 수행합니다.</li>
         </ul>
     </div>

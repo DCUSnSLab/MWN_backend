@@ -391,9 +391,14 @@ class SystemControlView(BaseView):
         from weather_scheduler import get_weather_stats
         weather_stats = get_weather_stats()
 
+        # 활성 시장 목록 (테스트 알림용)
+        from models import Market
+        active_markets = Market.query.filter_by(is_active=True).order_by(Market.name).all()
+
         return self.render('admin/system_control.html',
                          scheduler_status=scheduler_status,
-                         weather_stats=weather_stats)
+                         weather_stats=weather_stats,
+                         markets=active_markets)
 
     @expose('/weather-collect/', methods=['POST'])
     def collect_weather(self):
@@ -452,6 +457,104 @@ class SystemControlView(BaseView):
             stop_weather_scheduler()
             flash('스케줄러를 중지했습니다.', 'warning')
         except Exception as e:
+            flash(f'오류 발생: {str(e)}', 'error')
+
+        return redirect(url_for('.index'))
+
+    @expose('/test-notification/', methods=['POST'])
+    def send_test_notification(self):
+        """테스트 알림 전송"""
+        if not self.is_accessible():
+            return redirect(url_for('admin.login_view'))
+
+        try:
+            market_id = request.form.get('market_id', type=int)
+            title = request.form.get('title', '').strip()
+            body = request.form.get('body', '').strip()
+
+            # 입력 검증
+            if not market_id:
+                flash('시장을 선택해주세요.', 'error')
+                return redirect(url_for('.index'))
+
+            if not title or not body:
+                flash('제목과 내용을 입력해주세요.', 'error')
+                return redirect(url_for('.index'))
+
+            # 시장 조회
+            from models import Market, UserMarketInterest
+            market = Market.query.get(market_id)
+            if not market:
+                flash('선택한 시장을 찾을 수 없습니다.', 'error')
+                return redirect(url_for('.index'))
+
+            # 해당 시장에 관심을 가진 사용자들 조회
+            interested_users = market.get_interested_users()
+
+            if not interested_users:
+                flash(f'{market.name}에 관심을 가진 사용자가 없습니다.', 'warning')
+                return redirect(url_for('.index'))
+
+            # FCM 토큰 수집
+            fcm_tokens = []
+            valid_users = []
+
+            for user in interested_users:
+                if user.can_receive_fcm():
+                    fcm_tokens.append(user.fcm_token)
+                    valid_users.append(user)
+
+            if not fcm_tokens:
+                flash(f'{market.name}에 관심을 가진 사용자 중 FCM 알림을 받을 수 있는 사용자가 없습니다.', 'warning')
+                return redirect(url_for('.index'))
+
+            # FCM 알림 전송
+            from fcm_integration.fcm_utils import fcm_service
+
+            notification_data = {
+                'type': 'test_notification',
+                'market_id': str(market.id),
+                'market_name': market.name,
+            }
+
+            result = fcm_service.send_multicast(
+                tokens=fcm_tokens,
+                title=title,
+                body=body,
+                data=notification_data
+            )
+
+            success_count = result.get('success_count', 0) if result else 0
+            failure_count = result.get('failure_count', 0) if result else len(valid_users)
+
+            logger.info(f"테스트 알림 전송 - 시장: {market.name}, 대상: {len(valid_users)}명, 성공: {success_count}명, 실패: {failure_count}명")
+
+            # 알림 로그 기록
+            from models import MarketAlarmLog
+            from database import db
+            from datetime import datetime
+
+            alarm_log = MarketAlarmLog(
+                market_id=market.id,
+                alert_type='test',
+                alert_title=title,
+                alert_body=body,
+                total_users=len(valid_users),
+                success_count=success_count,
+                failure_count=failure_count,
+                weather_data={'type': 'test_notification'},
+                created_at=datetime.utcnow()
+            )
+
+            db.session.add(alarm_log)
+            db.session.commit()
+
+            flash(f'테스트 알림을 전송했습니다. (대상: {len(valid_users)}명, 성공: {success_count}명, 실패: {failure_count}명)', 'success')
+
+        except Exception as e:
+            logger.error(f"테스트 알림 전송 오류: {e}")
+            import traceback
+            traceback.print_exc()
             flash(f'오류 발생: {str(e)}', 'error')
 
         return redirect(url_for('.index'))
