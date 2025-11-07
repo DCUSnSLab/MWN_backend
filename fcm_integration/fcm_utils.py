@@ -349,25 +349,31 @@ class WeatherNotificationService:
     
     def send_severe_weather_alert(self, location: str, weather_condition: str) -> Dict:
         """
-        심각한 날씨 상황에 대한 전체 알림
-        
+        [DEPRECATED] 심각한 날씨 상황에 대한 전체 알림 (토픽 기반)
+
+        이 메서드는 더 이상 사용되지 않습니다.
+        대신 weather_alerts.py의 check_all_markets_with_all_conditions()를 사용하세요.
+        해당 메서드는 관심시장을 등록한 사용자에게만 알림을 전송합니다.
+
         Args:
             location: 지역명
             weather_condition: 날씨 상황
-            
+
         Returns:
             dict: 전송 결과
         """
+        logger.warning("send_severe_weather_alert() is deprecated. Use weather_alerts.py instead.")
+
         topic = "severe_weather"
         title = f"⚠️ {location} 기상 특보"
         body = f"{weather_condition} 상황이 발생했습니다. 주의하시기 바랍니다."
-        
+
         data = {
             "type": "severe_weather",
             "location": location,
             "condition": weather_condition
         }
-        
+
         success = self.fcm_service.send_to_topic(topic, title, body, data)
         return {"success": success}
     
