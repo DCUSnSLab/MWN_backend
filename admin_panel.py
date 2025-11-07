@@ -477,8 +477,7 @@ def init_admin(app, db):
         app,
         name='날씨 알림 시스템',
         template_mode='bootstrap4',
-        index_view=SecureAdminIndexView(name='대시보드', url='/admin'),
-        base_template='admin/base.html'
+        index_view=SecureAdminIndexView(name='대시보드', url='/admin')
     )
 
     # 모델 뷰 추가
