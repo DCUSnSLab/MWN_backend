@@ -268,18 +268,6 @@ with app.app_context():
         exit(1)
 "
 
-# Firebase 서비스 계정 키 파일 확인
-echo "🔥 Checking Firebase configuration..."
-if [ -n "${FIREBASE_SERVICE_ACCOUNT_KEY}" ]; then
-    echo "  📝 Writing Firebase service account key to file..."
-    echo "${FIREBASE_SERVICE_ACCOUNT_KEY}" > /app/fcm_integration/serviceAccountKey.json
-    echo "  ✅ Firebase service account key configured!"
-elif [ -f "fcm_integration/serviceAccountKey.json" ]; then
-    echo "  ✅ Firebase service account key file already exists!"
-else
-    echo "  ⚠️ Firebase service account key not configured. FCM features may not work."
-fi
-
 # 헬스체크
 echo "🏥 Running health check..."
 

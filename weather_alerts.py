@@ -162,11 +162,12 @@ class WeatherAlertSystem:
                 body = f"향후 {rain_info['checked_hours']}시간 내에 비가 올 가능성이 있습니다."
             
             # FCM 알림 전송
+            import json
             notification_data = {
                 'type': 'rain_alert',
                 'market_id': str(market.id),
                 'market_name': market.name,
-                'alerts': rain_info.get('alerts', [])
+                'alerts': json.dumps(rain_info.get('alerts', []), ensure_ascii=False)  # JSON 문자열로 변환
             }
             
             result = fcm_service.send_multicast(
@@ -427,11 +428,12 @@ class WeatherAlertSystem:
             title, body = self._create_weather_alert_message(market.name, alerts, weather_info['checked_hours'])
 
             # FCM 알림 전송
+            import json
             notification_data = {
                 'type': 'weather_alert',
                 'market_id': str(market.id),
                 'market_name': market.name,
-                'alerts': alerts
+                'alerts': json.dumps(alerts, ensure_ascii=False)  # JSON 문자열로 변환
             }
 
             result = fcm_service.send_multicast(
