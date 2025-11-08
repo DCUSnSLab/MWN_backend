@@ -707,3 +707,203 @@ def check_market_all_conditions(market_id: int, hours: int = 24) -> Dict[str, An
             return {'error': '시장을 찾을 수 없습니다.'}
 
         return weather_alert_system.check_all_weather_conditions_for_market(market, hours)
+
+def send_test_weather_summary_to_all_users() -> Dict[str, Any]:
+    """
+    [테스트용] 모든 관심 시장의 날씨 요약을 조건 없이 사용자에게 알림 전송
+
+    실제 날씨 조건(비, 폭염, 한파 등) 체크 없이 데이터베이스에 저장된
+    최신 날씨 정보를 요약해서 관심 시장을 등록한 사용자들에게 전송합니다.
+
+    Returns:
+        Dict: 전송 결과
+    """
+    from app import app, db
+    from models import Weather
+    from datetime import datetime
+    import json
+
+    logger.info("테스트 날씨 요약 알림 전송 시작")
+
+    try:
+        with app.app_context():
+            # 관심을 가진 사용자가 있는 활성 시장들 조회
+            markets_with_interest = db.session.query(Market).join(
+                UserMarketInterest,
+                Market.id == UserMarketInterest.market_id
+            ).filter(
+                Market.is_active == True,
+                Market.nx.isnot(None),
+                Market.ny.isnot(None),
+                UserMarketInterest.is_active == True,
+                UserMarketInterest.notification_enabled == True
+            ).distinct().all()
+
+            if not markets_with_interest:
+                return {
+                    'success': True,
+                    'message': '관심을 가진 사용자가 있는 활성 시장이 없습니다.',
+                    'sent_count': 0
+                }
+
+            logger.info(f"{len(markets_with_interest)}개 시장의 날씨 요약 알림 전송 중...")
+
+            total_sent = 0
+            results = []
+
+            for market in markets_with_interest:
+                try:
+                    # 데이터베이스에서 최신 날씨 데이터 조회
+                    current_weather = Weather.query.filter_by(
+                        nx=market.nx,
+                        ny=market.ny,
+                        api_type='current'
+                    ).order_by(Weather.created_at.desc()).first()
+
+                    # 최신 예보 데이터도 조회 (향후 날씨)
+                    forecast_weather = Weather.query.filter_by(
+                        nx=market.nx,
+                        ny=market.ny,
+                        api_type='forecast'
+                    ).order_by(
+                        Weather.base_date.desc(),
+                        Weather.base_time.desc(),
+                        Weather.fcst_date.asc(),
+                        Weather.fcst_time.asc()
+                    ).limit(6).all()  # 향후 6시간 정도
+
+                    if not current_weather:
+                        logger.warning(f"{market.name}: 날씨 데이터 없음")
+                        results.append({
+                            'market': market.name,
+                            'success': False,
+                            'message': '날씨 데이터 없음'
+                        })
+                        continue
+
+                    # 해당 시장에 관심을 가진 사용자들 조회
+                    interested_users = market.get_interested_users()
+
+                    if not interested_users:
+                        results.append({
+                            'market': market.name,
+                            'success': True,
+                            'message': '관심 사용자 없음',
+                            'sent_count': 0
+                        })
+                        continue
+
+                    # FCM 토큰 수집
+                    fcm_tokens = []
+                    valid_users = []
+
+                    for user in interested_users:
+                        if user.can_receive_fcm():
+                            fcm_tokens.append(user.fcm_token)
+                            valid_users.append(user)
+
+                    if not fcm_tokens:
+                        results.append({
+                            'market': market.name,
+                            'success': True,
+                            'message': 'FCM 알림을 받을 수 있는 사용자 없음',
+                            'sent_count': 0
+                        })
+                        continue
+
+                    # 날씨 요약 메시지 생성
+                    title = f"☀️ {market.name} 날씨 정보"
+
+                    # 현재 날씨 정보
+                    temp = current_weather.temp if current_weather.temp is not None else '?'
+                    humidity = current_weather.humidity if current_weather.humidity is not None else '?'
+                    wind_speed = current_weather.wind_speed if current_weather.wind_speed is not None else '?'
+
+                    # 강수 형태 확인
+                    weather_condition = "맑음"
+                    if current_weather.pty:
+                        pty_map = {'0': '없음', '1': '비', '2': '비/눈', '3': '눈', '4': '소나기'}
+                        weather_condition = pty_map.get(current_weather.pty, '맑음')
+
+                    body = f"현재: {temp}°C, 습도 {humidity}%, 풍속 {wind_speed}m/s"
+                    if weather_condition != "없음" and weather_condition != "맑음":
+                        body += f"\n날씨: {weather_condition}"
+
+                    # 향후 예보 정보 추가
+                    if forecast_weather:
+                        # 강수확률이 있는 예보 찾기
+                        rain_forecasts = [f for f in forecast_weather if f.pop and f.pop >= 30]
+                        if rain_forecasts:
+                            max_pop = max([f.pop for f in rain_forecasts])
+                            body += f"\n향후 강수확률: 최대 {int(max_pop)}%"
+
+                    # 데이터 업데이트 시간
+                    updated_time = current_weather.created_at.strftime('%H:%M') if current_weather.created_at else '?'
+                    body += f"\n(업데이트: {updated_time})"
+
+                    # FCM 알림 전송
+                    notification_data = {
+                        'type': 'weather_summary_test',
+                        'market_id': str(market.id),
+                        'market_name': market.name,
+                        'temperature': str(temp),
+                        'humidity': str(humidity),
+                        'wind_speed': str(wind_speed),
+                        'weather_condition': weather_condition,
+                        'updated_at': updated_time
+                    }
+
+                    result = fcm_service.send_multicast(
+                        tokens=fcm_tokens,
+                        title=title,
+                        body=body,
+                        data=notification_data
+                    )
+
+                    success_count = result.get('success_count', 0) if result else 0
+                    failure_count = result.get('failure_count', 0) if result else len(valid_users)
+
+                    logger.info(f"{market.name} 날씨 요약: {len(valid_users)}명 중 {success_count}명에게 전송 성공")
+
+                    total_sent += success_count
+
+                    results.append({
+                        'market': market.name,
+                        'success': True,
+                        'sent_count': success_count,
+                        'failed_count': failure_count,
+                        'weather_summary': {
+                            'temp': temp,
+                            'humidity': humidity,
+                            'wind_speed': wind_speed,
+                            'condition': weather_condition
+                        }
+                    })
+
+                except Exception as e:
+                    logger.error(f"시장 {market.name} 처리 중 오류: {e}")
+                    results.append({
+                        'market': market.name,
+                        'success': False,
+                        'error': str(e)
+                    })
+
+            logger.info(f"테스트 날씨 요약 알림 전송 완료: 총 {total_sent}건 전송")
+
+            return {
+                'success': True,
+                'message': f'{len(markets_with_interest)}개 시장에 대해 총 {total_sent}건 알림 전송 완료',
+                'total_markets': len(markets_with_interest),
+                'total_sent': total_sent,
+                'results': results
+            }
+
+    except Exception as e:
+        logger.error(f"테스트 날씨 요약 알림 전송 중 오류: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {
+            'success': False,
+            'error': str(e),
+            'total_sent': 0
+        }

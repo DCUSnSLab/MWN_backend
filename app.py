@@ -661,74 +661,121 @@ def handle_damage_status():
 
 @app.route('/api/weather/current', methods=['POST'])
 def get_current_weather():
-    """현재 날씨 정보 조회"""
-    from weather_api import KMAWeatherAPI, convert_to_grid
-    
+    """현재 날씨 정보 조회 (데이터베이스에서 최신 데이터 가져오기)"""
+    from weather_api import convert_to_grid
+    from models import Weather
+
     data = request.get_json()
-    
+
     # 필수 파라미터 검증
     if 'latitude' not in data or 'longitude' not in data:
         return jsonify({'error': '위도(latitude)와 경도(longitude)가 필요합니다.'}), 400
-    
+
     try:
         lat = float(data['latitude'])
         lon = float(data['longitude'])
         location_name = data.get('location_name', '')
-        
-        # 서비스키 확인
-        service_key = os.environ.get('KMA_SERVICE_KEY')
-        if not service_key:
-            return jsonify({'error': 'KMA_SERVICE_KEY가 설정되지 않았습니다.'}), 500
-        
+
         # 위경도를 격자좌표로 변환
-        print(lat, lon)
         nx, ny = convert_to_grid(lat, lon)
-        print(nx, ny)
-        
-        # Weather API 호출
-        weather_api = KMAWeatherAPI(service_key)
-        result = weather_api.get_current_weather(nx, ny, location_name)
-        
+
+        # 데이터베이스에서 해당 격자 좌표의 최신 현재 날씨 데이터 조회
+        weather = Weather.query.filter_by(
+            nx=nx,
+            ny=ny,
+            api_type='current'
+        ).order_by(Weather.created_at.desc()).first()
+
+        if not weather:
+            return jsonify({
+                'status': 'error',
+                'message': f'해당 위치({nx}, {ny})의 날씨 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았거나 해당 지역이 활성 시장 목록에 없습니다.'
+            }), 404
+
+        # 성공 응답 구성
+        result = {
+            'status': 'success',
+            'message': '데이터베이스에서 최신 날씨 데이터를 가져왔습니다.',
+            'data': weather.to_dict(),
+            'location_name': location_name or weather.location_name,
+            'nx': nx,
+            'ny': ny
+        }
+
         return jsonify(result)
-        
+
     except ValueError:
         return jsonify({'error': '위도와 경도는 숫자여야 합니다.'}), 400
     except Exception as e:
+        logger.error(f"현재 날씨 조회 오류: {e}")
         return jsonify({'error': f'서버 오류: {str(e)}'}), 500
 
 @app.route('/api/weather/forecast', methods=['POST'])
 def get_forecast_weather():
-    """날씨 예보 정보 조회"""
-    from weather_api import KMAWeatherAPI, convert_to_grid
-    
+    """날씨 예보 정보 조회 (데이터베이스에서 최신 데이터 가져오기)"""
+    from weather_api import convert_to_grid
+    from models import Weather
+
     data = request.get_json()
-    
+
     # 필수 파라미터 검증
     if 'latitude' not in data or 'longitude' not in data:
         return jsonify({'error': '위도(latitude)와 경도(longitude)가 필요합니다.'}), 400
-    
+
     try:
         lat = float(data['latitude'])
         lon = float(data['longitude'])
         location_name = data.get('location_name', '')
-        
-        # 서비스키 확인
-        service_key = os.environ.get('KMA_SERVICE_KEY')
-        if not service_key:
-            return jsonify({'error': 'KMA_SERVICE_KEY가 설정되지 않았습니다.'}), 500
-        
+
         # 위경도를 격자좌표로 변환
         nx, ny = convert_to_grid(lat, lon)
-        
-        # Weather API 호출
-        weather_api = KMAWeatherAPI(service_key)
-        result = weather_api.get_forecast_weather(nx, ny, location_name)
-        
+
+        # 데이터베이스에서 해당 격자 좌표의 최신 예보 데이터 조회
+        # 예보는 여러 시간대의 데이터가 있으므로 최신 base_date/base_time 기준으로 모두 가져옴
+        forecasts = Weather.query.filter_by(
+            nx=nx,
+            ny=ny,
+            api_type='forecast'
+        ).order_by(
+            Weather.base_date.desc(),
+            Weather.base_time.desc(),
+            Weather.fcst_date.asc(),
+            Weather.fcst_time.asc()
+        ).limit(100).all()
+
+        if not forecasts:
+            return jsonify({
+                'status': 'error',
+                'message': f'해당 위치({nx}, {ny})의 예보 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았거나 해당 지역이 활성 시장 목록에 없습니다.'
+            }), 404
+
+        # 가장 최신 base_date/base_time을 가진 예보들만 필터링
+        latest_base_date = forecasts[0].base_date
+        latest_base_time = forecasts[0].base_time
+
+        latest_forecasts = [
+            f for f in forecasts
+            if f.base_date == latest_base_date and f.base_time == latest_base_time
+        ]
+
+        # 성공 응답 구성
+        result = {
+            'status': 'success',
+            'message': '데이터베이스에서 최신 예보 데이터를 가져왔습니다.',
+            'data': [weather.to_dict() for weather in latest_forecasts],
+            'location_name': location_name or (forecasts[0].location_name if forecasts else ''),
+            'nx': nx,
+            'ny': ny,
+            'base_date': latest_base_date,
+            'base_time': latest_base_time
+        }
+
         return jsonify(result)
-        
+
     except ValueError:
         return jsonify({'error': '위도와 경도는 숫자여야 합니다.'}), 400
     except Exception as e:
+        logger.error(f"예보 날씨 조회 오류: {e}")
         return jsonify({'error': f'서버 오류: {str(e)}'}), 500
 
 @app.route('/api/weather', methods=['GET'])
@@ -916,6 +963,38 @@ def manual_weather_alert_check():
             return jsonify({'error': f'날씨 알림 확인 실패: {str(e)}'}), 500
 
     return _manual_weather_alert_check()
+
+@app.route('/api/admin/weather-alerts/test-summary', methods=['POST'])
+def test_weather_summary_alert():
+    """관리자용 테스트: 모든 관심 시장의 날씨 요약 알림 전송"""
+    from auth_utils import admin_required
+    from weather_alerts import send_test_weather_summary_to_all_users
+
+    @admin_required
+    def _test_weather_summary_alert(current_user):
+        try:
+            logger.info(f"관리자 {current_user.email}가 날씨 요약 테스트 알림을 요청했습니다.")
+
+            result = send_test_weather_summary_to_all_users()
+
+            if result.get('success'):
+                return jsonify({
+                    'status': 'success',
+                    'message': '날씨 요약 알림 전송 완료',
+                    'result': result
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': '날씨 요약 알림 전송 실패',
+                    'error': result.get('error')
+                }), 500
+
+        except Exception as e:
+            logger.error(f"날씨 요약 알림 테스트 실패: {e}")
+            return jsonify({'error': f'날씨 요약 알림 테스트 실패: {str(e)}'}), 500
+
+    return _test_weather_summary_alert()
 
 # 알림 이력 관련 API
 @app.route('/api/alarm-logs', methods=['GET'])
