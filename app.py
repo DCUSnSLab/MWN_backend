@@ -1226,6 +1226,13 @@ def get_market_alarm_logs(market_id):
 
     return _get_market_alarm_logs()
 
+# Privacy Policy 페이지
+@app.route('/privacy')
+def privacy():
+    """개인정보처리방침 페이지"""
+    from flask import render_template
+    return render_template('privacy.html')
+
 # 웹 데이터베이스 뷰어 라우트들 추가
 @app.route('/db-viewer')
 def db_viewer():
