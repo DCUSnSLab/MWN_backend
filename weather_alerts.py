@@ -28,11 +28,11 @@ class WeatherAlertSystem:
         self.service_key = os.environ.get('KMA_SERVICE_KEY')
         if not self.service_key:
             logger.warning("KMA_SERVICE_KEY가 설정되지 않았습니다. 날씨 알림 기능이 제한됩니다.")
-        
+
         self.weather_api = KMAWeatherAPI(self.service_key) if self.service_key else None
-        
-        # 알림 임계값 설정
-        self.thresholds = {
+
+        # 기본 알림 임계값 설정 (시장별 설정이 없을 때 사용)
+        self.default_thresholds = {
             'rain_probability': 30,  # 강수확률 30% 이상
             'high_temp': 33,  # 폭염: 33도 이상
             'low_temp': -12,  # 한파: -12도 이하
@@ -40,6 +40,40 @@ class WeatherAlertSystem:
             'snow_amount': 1,  # 적설량: 1cm 이상
         }
         self.forecast_hours = 24  # 향후 24시간 예보 확인
+
+    def get_market_thresholds(self, market: Market) -> Dict[str, Any]:
+        """
+        시장의 알림 조건 가져오기
+        시장에 설정된 조건이 있으면 사용하고, 없으면 기본값 사용
+        """
+        alert_conditions = market.alert_conditions
+
+        if not alert_conditions:
+            # 기본값 사용
+            return {
+                'enabled': True,
+                'rain_probability': self.default_thresholds['rain_probability'],
+                'high_temp': self.default_thresholds['high_temp'],
+                'low_temp': self.default_thresholds['low_temp'],
+                'wind_speed': self.default_thresholds['wind_speed'],
+                'snow_enabled': True,
+                'rain_enabled': True,
+                'temp_enabled': True,
+                'wind_enabled': True
+            }
+
+        # 시장에 설정된 조건 사용
+        return {
+            'enabled': alert_conditions.get('enabled', True),
+            'rain_probability': alert_conditions.get('rain_probability', self.default_thresholds['rain_probability']),
+            'high_temp': alert_conditions.get('high_temp', self.default_thresholds['high_temp']),
+            'low_temp': alert_conditions.get('low_temp', self.default_thresholds['low_temp']),
+            'wind_speed': alert_conditions.get('wind_speed', self.default_thresholds['wind_speed']),
+            'snow_enabled': alert_conditions.get('snow_enabled', True),
+            'rain_enabled': alert_conditions.get('rain_enabled', True),
+            'temp_enabled': alert_conditions.get('temp_enabled', True),
+            'wind_enabled': alert_conditions.get('wind_enabled', True)
+        }
         
     def check_rain_forecast_for_market(self, market: Market, hours: int = None) -> Dict[str, Any]:
         """특정 시장의 비 예보 확인"""
@@ -283,11 +317,19 @@ class WeatherAlertSystem:
             }
 
     def check_all_weather_conditions_for_market(self, market: Market, hours: int = None) -> Dict[str, Any]:
-        """특정 시장의 모든 날씨 조건 확인 (비, 폭염, 한파, 강풍 등)"""
+        """특정 시장의 모든 날씨 조건 확인 (비, 폭염, 한파, 강풍 등) - 시장별 설정 적용"""
         if not self.weather_api:
             return {'has_alerts': False, 'error': 'Weather API not available'}
 
         hours = hours or self.forecast_hours
+
+        # 시장별 알림 조건 가져오기
+        thresholds = self.get_market_thresholds(market)
+
+        # 알림이 비활성화된 시장은 체크하지 않음
+        if not thresholds['enabled']:
+            logger.debug(f"시장 {market.name}의 알림이 비활성화되어 있습니다.")
+            return {'has_alerts': False, 'message': '알림이 비활성화되어 있습니다.'}
 
         try:
             # 시장의 격자 좌표로 예보 조회
@@ -335,41 +377,42 @@ class WeatherAlertSystem:
                             'time_str': fcst_datetime.strftime('%m월 %d일 %H시')
                         }
 
-                        # 1. 비/눈 확인
-                        if (pop and pop >= self.thresholds['rain_probability']) or (pty and pty != '0'):
-                            all_alerts['rain'].append({
-                                **alert_item,
-                                'pop': pop,
-                                'pty': pty,
-                                'description': self._get_precipitation_description(pty)
-                            })
-
-                            # 눈인 경우 별도 확인
-                            if pty in ['2', '3'] and sno and sno >= self.thresholds['snow_amount']:
-                                all_alerts['snow'].append({
+                        # 1. 비/눈 확인 (rain_enabled가 True일 때만)
+                        if thresholds['rain_enabled']:
+                            if (pop and pop >= thresholds['rain_probability']) or (pty and pty != '0'):
+                                all_alerts['rain'].append({
                                     **alert_item,
-                                    'snow_amount': sno,
-                                    'description': f"적설량 {sno}cm 예상"
+                                    'pop': pop,
+                                    'pty': pty,
+                                    'description': self._get_precipitation_description(pty)
                                 })
 
-                        # 2. 폭염 확인
-                        if tmp and tmp >= self.thresholds['high_temp']:
+                                # 눈인 경우 별도 확인 (snow_enabled가 True일 때만)
+                                if thresholds['snow_enabled'] and pty in ['2', '3'] and sno and sno >= self.default_thresholds['snow_amount']:
+                                    all_alerts['snow'].append({
+                                        **alert_item,
+                                        'snow_amount': sno,
+                                        'description': f"적설량 {sno}cm 예상"
+                                    })
+
+                        # 2. 폭염 확인 (temp_enabled가 True일 때만)
+                        if thresholds['temp_enabled'] and tmp and tmp >= thresholds['high_temp']:
                             all_alerts['high_temp'].append({
                                 **alert_item,
                                 'temperature': tmp,
                                 'description': f"폭염 주의 (기온 {tmp}°C)"
                             })
 
-                        # 3. 한파 확인
-                        if tmp and tmp <= self.thresholds['low_temp']:
+                        # 3. 한파 확인 (temp_enabled가 True일 때만)
+                        if thresholds['temp_enabled'] and tmp and tmp <= thresholds['low_temp']:
                             all_alerts['low_temp'].append({
                                 **alert_item,
                                 'temperature': tmp,
                                 'description': f"한파 주의 (기온 {tmp}°C)"
                             })
 
-                        # 4. 강풍 확인
-                        if wsd and wsd >= self.thresholds['wind_speed']:
+                        # 4. 강풍 확인 (wind_enabled가 True일 때만)
+                        if thresholds['wind_enabled'] and wsd and wsd >= thresholds['wind_speed']:
                             all_alerts['strong_wind'].append({
                                 **alert_item,
                                 'wind_speed': wsd,
@@ -387,7 +430,8 @@ class WeatherAlertSystem:
                 'has_alerts': len(active_alerts) > 0,
                 'market_name': market.name,
                 'alerts': active_alerts,
-                'checked_hours': hours
+                'checked_hours': hours,
+                'thresholds_used': thresholds  # 사용된 임계값 정보 포함
             }
 
         except Exception as e:

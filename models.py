@@ -195,7 +195,7 @@ class UserMarketInterest(db.Model):
 
 class Market(db.Model):
     __tablename__ = 'markets'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
     location = db.Column(db.String(300), nullable=False)
@@ -207,7 +207,20 @@ class Market(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
-    
+
+    # 날씨 알림 조건 설정 (JSON 형식)
+    alert_conditions = db.Column(db.JSON, default=lambda: {
+        'enabled': True,  # 알림 활성화 여부
+        'rain_probability': 30,  # 강수확률 임계값 (%)
+        'high_temp': 33,  # 폭염 임계값 (°C)
+        'low_temp': -12,  # 한파 임계값 (°C)
+        'wind_speed': 14,  # 강풍 임계값 (m/s)
+        'snow_enabled': True,  # 눈 알림 활성화
+        'rain_enabled': True,  # 비 알림 활성화
+        'temp_enabled': True,  # 기온 알림 활성화
+        'wind_enabled': True  # 강풍 알림 활성화
+    })
+
     # Relationship with damage status
     damage_statuses = db.relationship('DamageStatus', backref='market', lazy=True)
     
@@ -223,8 +236,37 @@ class Market(db.Model):
             'category': self.category,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'is_active': self.is_active
+            'is_active': self.is_active,
+            'alert_conditions': self.alert_conditions or self.get_default_alert_conditions()
         }
+
+    @staticmethod
+    def get_default_alert_conditions():
+        """기본 알림 조건 반환"""
+        return {
+            'enabled': True,
+            'rain_probability': 30,
+            'high_temp': 33,
+            'low_temp': -12,
+            'wind_speed': 14,
+            'snow_enabled': True,
+            'rain_enabled': True,
+            'temp_enabled': True,
+            'wind_enabled': True
+        }
+
+    def update_alert_conditions(self, conditions: dict):
+        """알림 조건 업데이트"""
+        if self.alert_conditions is None:
+            self.alert_conditions = self.get_default_alert_conditions()
+
+        # 기존 조건에 새로운 조건 병합
+        self.alert_conditions.update(conditions)
+        self.updated_at = datetime.utcnow()
+
+        # SQLAlchemy가 JSON 변경을 감지하도록 플래그 설정
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(self, 'alert_conditions')
     
     @classmethod
     def search_by_name(cls, query, limit=20):
