@@ -29,7 +29,7 @@ node {
     }
 
     stage('Kubernetes deploy') {
-        sh "kubectl apply -f /services/mwn/mwn_backend_service.yaml -n mwn"
+        sh "kubectl apply -f /services/mwn/mwn_backend_service_loadbalancer.yaml -n mwn"
     }
 
     stage('Complete') {
