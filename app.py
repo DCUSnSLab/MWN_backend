@@ -229,7 +229,7 @@ def delete_account():
 
     @login_required
     def _delete_account(current_user):
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         deletion_reason = data.get('reason', 'No reason provided.')
 
         try:
