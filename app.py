@@ -267,7 +267,7 @@ def register_fcm_token():
 def fcm_settings():
     """FCM 설정 조회/업데이트"""
     from auth_utils import login_required
-    
+
     @login_required
     def _fcm_settings(current_user):
         if request.method == 'GET':
@@ -278,11 +278,11 @@ def fcm_settings():
                 'device_info': current_user.device_info,
                 'has_token': current_user.fcm_token is not None
             })
-        
+
         elif request.method == 'POST':
             # FCM 설정 업데이트
             data = request.get_json()
-            
+
             try:
                 # FCM 활성화/비활성화
                 if 'enabled' in data:
@@ -290,29 +290,124 @@ def fcm_settings():
                         current_user.enable_fcm()
                     else:
                         current_user.disable_fcm()
-                
+
                 # 주제 구독 관리
                 if 'subscribe_topics' in data:
                     for topic in data['subscribe_topics']:
                         current_user.subscribe_to_topic(topic)
-                
+
                 if 'unsubscribe_topics' in data:
                     for topic in data['unsubscribe_topics']:
                         current_user.unsubscribe_from_topic(topic)
-                
+
                 db.session.commit()
-                
+
                 return jsonify({
                     'message': 'FCM 설정이 업데이트되었습니다.',
                     'fcm_enabled': current_user.fcm_enabled,
                     'fcm_topics': current_user.fcm_topics or []
                 })
-                
+
             except Exception as e:
                 db.session.rollback()
                 return jsonify({'error': f'FCM 설정 업데이트 실패: {str(e)}'}), 500
-    
+
     return _fcm_settings()
+
+@app.route('/api/user/do-not-disturb', methods=['GET'])
+def get_do_not_disturb():
+    """사용자의 방해금지 시간 설정 조회"""
+    from auth_utils import login_required
+
+    @login_required
+    def _get_do_not_disturb(current_user):
+        try:
+            dnd_settings = current_user.do_not_disturb or {
+                'enabled': False,
+                'start_time': '22:00',
+                'end_time': '08:00',
+                'all_day': False,
+                'days': ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+            }
+
+            return jsonify({
+                'status': 'success',
+                'do_not_disturb': dnd_settings
+            })
+
+        except Exception as e:
+            logger.error(f"방해금지 설정 조회 실패: {e}")
+            return jsonify({'error': f'방해금지 설정 조회 실패: {str(e)}'}), 500
+
+    return _get_do_not_disturb()
+
+@app.route('/api/user/do-not-disturb', methods=['PUT'])
+def update_do_not_disturb():
+    """사용자의 방해금지 시간 설정 업데이트"""
+    from auth_utils import login_required
+
+    @login_required
+    def _update_do_not_disturb(current_user):
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': '방해금지 설정 데이터가 필요합니다.'}), 400
+
+        try:
+            # 허용된 필드만 업데이트
+            allowed_fields = {'enabled', 'start_time', 'end_time', 'all_day', 'days'}
+            update_data = {}
+
+            for field in allowed_fields:
+                if field in data:
+                    update_data[field] = data[field]
+
+            if not update_data:
+                return jsonify({'error': '업데이트할 설정이 없습니다.'}), 400
+
+            # 시간 형식 검증
+            if 'start_time' in update_data:
+                try:
+                    hour, minute = map(int, update_data['start_time'].split(':'))
+                    if not (0 <= hour < 24 and 0 <= minute < 60):
+                        return jsonify({'error': 'start_time 형식이 올바르지 않습니다. (HH:MM)'}), 400
+                except (ValueError, AttributeError):
+                    return jsonify({'error': 'start_time 형식이 올바르지 않습니다. (HH:MM)'}), 400
+
+            if 'end_time' in update_data:
+                try:
+                    hour, minute = map(int, update_data['end_time'].split(':'))
+                    if not (0 <= hour < 24 and 0 <= minute < 60):
+                        return jsonify({'error': 'end_time 형식이 올바르지 않습니다. (HH:MM)'}), 400
+                except (ValueError, AttributeError):
+                    return jsonify({'error': 'end_time 형식이 올바르지 않습니다. (HH:MM)'}), 400
+
+            # 요일 검증
+            if 'days' in update_data:
+                valid_days = {'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'}
+                if not isinstance(update_data['days'], list):
+                    return jsonify({'error': 'days는 배열이어야 합니다.'}), 400
+                if not all(day in valid_days for day in update_data['days']):
+                    return jsonify({'error': f'유효한 요일: {", ".join(valid_days)}'}), 400
+
+            # 방해금지 설정 업데이트
+            current_user.update_do_not_disturb(update_data)
+            db.session.commit()
+
+            logger.info(f"사용자 {current_user.email}의 방해금지 설정이 업데이트되었습니다: {update_data}")
+
+            return jsonify({
+                'status': 'success',
+                'message': '방해금지 설정이 업데이트되었습니다.',
+                'do_not_disturb': current_user.do_not_disturb
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"방해금지 설정 업데이트 실패: {e}")
+            return jsonify({'error': f'방해금지 설정 업데이트 실패: {str(e)}'}), 500
+
+    return _update_do_not_disturb()
 
 @app.route('/api/fcm/test', methods=['POST'])
 def test_fcm_notification():

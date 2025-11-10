@@ -24,6 +24,15 @@ class User(db.Model):
     fcm_enabled = db.Column(db.Boolean, default=True)  # FCM 알림 활성화 여부
     fcm_topics = db.Column(db.JSON)  # 구독한 FCM 주제들
     device_info = db.Column(db.JSON)  # 기기 정보 (플랫폼, 버전 등)
+
+    # 방해금지 시간 설정 (JSON 형식)
+    do_not_disturb = db.Column(db.JSON, default=lambda: {
+        'enabled': False,  # 방해금지 모드 활성화 여부
+        'start_time': '22:00',  # 시작 시간 (HH:MM 형식)
+        'end_time': '08:00',  # 종료 시간 (HH:MM 형식)
+        'all_day': False,  # 하루 종일 방해금지
+        'days': ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']  # 적용 요일
+    })
     
     def set_password(self, password):
         """패스워드를 해시화해서 저장"""
@@ -51,7 +60,14 @@ class User(db.Model):
             'fcm_token': self.fcm_token,
             'fcm_enabled': self.fcm_enabled,
             'fcm_topics': self.fcm_topics,
-            'device_info': self.device_info
+            'device_info': self.device_info,
+            'do_not_disturb': self.do_not_disturb or {
+                'enabled': False,
+                'start_time': '22:00',
+                'end_time': '08:00',
+                'all_day': False,
+                'days': ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+            }
         }
         
         # 민감한 정보는 관리자만 볼 수 있도록
@@ -102,9 +118,90 @@ class User(db.Model):
     
     def can_receive_fcm(self):
         """FCM 알림 수신 가능 여부"""
-        return (self.is_active and 
-                self.fcm_enabled and 
+        return (self.is_active and
+                self.fcm_enabled and
                 self.fcm_token is not None)
+
+    def is_in_do_not_disturb_time(self, check_time=None):
+        """
+        현재 시간이 방해금지 시간인지 확인
+
+        Args:
+            check_time: 확인할 시간 (datetime). None이면 현재 시간 사용
+
+        Returns:
+            bool: 방해금지 시간이면 True, 아니면 False
+        """
+        dnd = self.do_not_disturb
+
+        # 방해금지 설정이 없거나 비활성화된 경우
+        if not dnd or not dnd.get('enabled', False):
+            return False
+
+        # 하루 종일 방해금지 모드
+        if dnd.get('all_day', False):
+            return True
+
+        # 현재 시간 가져오기 (또는 지정된 시간 사용)
+        if check_time is None:
+            check_time = datetime.now()
+
+        # 요일 확인 (월=0, 일=6)
+        day_names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+        current_day = day_names[check_time.weekday()]
+        days = dnd.get('days', [])
+
+        # 오늘이 방해금지 적용 요일이 아니면
+        if days and current_day not in days:
+            return False
+
+        # 시작/종료 시간 가져오기
+        start_time_str = dnd.get('start_time', '22:00')
+        end_time_str = dnd.get('end_time', '08:00')
+
+        try:
+            # 시간 파싱 (HH:MM 형식)
+            start_hour, start_minute = map(int, start_time_str.split(':'))
+            end_hour, end_minute = map(int, end_time_str.split(':'))
+
+            current_minutes = check_time.hour * 60 + check_time.minute
+            start_minutes = start_hour * 60 + start_minute
+            end_minutes = end_hour * 60 + end_minute
+
+            # 시작 시간이 종료 시간보다 늦은 경우 (예: 22:00 ~ 08:00, 자정 넘김)
+            if start_minutes > end_minutes:
+                return current_minutes >= start_minutes or current_minutes < end_minutes
+            else:
+                # 일반적인 경우 (예: 12:00 ~ 14:00)
+                return start_minutes <= current_minutes < end_minutes
+
+        except (ValueError, AttributeError) as e:
+            # 시간 파싱 오류 시 방해금지 아님으로 처리
+            return False
+
+    def update_do_not_disturb(self, settings: dict):
+        """
+        방해금지 설정 업데이트
+
+        Args:
+            settings: 업데이트할 설정 딕셔너리
+        """
+        if self.do_not_disturb is None:
+            self.do_not_disturb = {
+                'enabled': False,
+                'start_time': '22:00',
+                'end_time': '08:00',
+                'all_day': False,
+                'days': ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+            }
+
+        # 기존 설정에 새로운 설정 병합
+        self.do_not_disturb.update(settings)
+        self.updated_at = datetime.utcnow()
+
+        # SQLAlchemy가 JSON 변경을 감지하도록 플래그 설정
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(self, 'do_not_disturb')
     
     def is_admin(self):
         """관리자 권한 확인"""

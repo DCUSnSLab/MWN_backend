@@ -162,12 +162,12 @@ class WeatherAlertSystem:
                     'sent_count': 0
                 }
             
-            # FCM 토큰 수집
+            # FCM 토큰 수집 (방해금지 시간 체크 포함)
             fcm_tokens = []
             valid_users = []
-            
+
             for user in interested_users:
-                if user.can_receive_fcm():
+                if user.can_receive_fcm() and not user.is_in_do_not_disturb_time():
                     fcm_tokens.append(user.fcm_token)
                     valid_users.append(user)
             
@@ -451,12 +451,12 @@ class WeatherAlertSystem:
                     'sent_count': 0
                 }
 
-            # FCM 토큰 수집
+            # FCM 토큰 수집 (방해금지 시간 체크 포함)
             fcm_tokens = []
             valid_users = []
 
             for user in interested_users:
-                if user.can_receive_fcm():
+                if user.can_receive_fcm() and not user.is_in_do_not_disturb_time():
                     fcm_tokens.append(user.fcm_token)
                     valid_users.append(user)
 
@@ -837,12 +837,12 @@ def send_test_weather_summary_to_all_users() -> Dict[str, Any]:
                         })
                         continue
 
-                    # FCM 토큰 수집
+                    # FCM 토큰 수집 (방해금지 시간 체크 포함)
                     fcm_tokens = []
                     valid_users = []
 
                     for user in interested_users:
-                        if user.can_receive_fcm():
+                        if user.can_receive_fcm() and not user.is_in_do_not_disturb_time():
                             fcm_tokens.append(user.fcm_token)
                             valid_users.append(user)
 
