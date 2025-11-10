@@ -1006,6 +1006,10 @@ def get_current_weather():
         nx, ny = convert_to_grid(lat, lon)
 
         # 해당 격자좌표를 가진 시장 찾기
+        # 이런 미친 코드.. 왜 이런 일이 발생했을까요
+        # 앱 쪽에서 시장 이름이 아닌 시장의 위도, 경도를 전달받는데(대체 왜?)
+        # 전달받은 위경도를 기상청 API에 호출하기 위한 격자 좌표로 변경해서 호출을 진행합니다
+        # 이 과정에서 약간의 오차가 발생해서 아래와 같이 변환 결과에 1을 더해줘야 정상적인 값이 나오는걸 확인했습니다
         market = Market.query.filter_by(nx=nx + 1, ny=ny + 1, is_active=True).first()
 
         if market:
