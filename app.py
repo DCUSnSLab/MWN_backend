@@ -986,9 +986,9 @@ def handle_damage_status():
 
 @app.route('/api/weather/current', methods=['POST'])
 def get_current_weather():
-    """현재 날씨 정보 조회 (데이터베이스에서 최신 데이터 가져오기)"""
+    """현재 날씨 정보 조회 (시장의 최신 데이터 가져오기)"""
     from weather_api import convert_to_grid
-    from models import Weather
+    from models import Weather, Market
 
     data = request.get_json()
 
@@ -1005,31 +1005,40 @@ def get_current_weather():
         # 위경도를 격자좌표로 변환
         nx, ny = convert_to_grid(lat, lon)
 
-        # 데이터베이스에서 해당 격자 좌표의 최신 현재 날씨 데이터 조회
-        weather = Weather.query.filter_by(
-            nx=nx,
-            ny=ny,
-            api_type='current'
-        ).order_by(Weather.created_at.desc()).first()
+        # 해당 격자좌표를 가진 시장 찾기
+        market = Market.query.filter_by(nx=nx, ny=ny, is_active=True).first()
 
-        if not weather:
-            logger.warning(f"현재 날씨 조회 실패: 데이터 없음 (위치: {location_name}, 격자좌표: {nx}, {ny})")
+        if market:
+            # 시장이 있으면 해당 시장의 최신 날씨 데이터 조회
+            weather = Weather.query.filter_by(
+                nx=market.nx,
+                ny=market.ny,
+                api_type='current'
+            ).order_by(Weather.created_at.desc()).first()
+
+            if weather:
+                result = {
+                    'status': 'success',
+                    'message': f'{market.name}의 최신 날씨 데이터를 가져왔습니다.',
+                    'data': weather.to_dict(),
+                    'location_name': market.name,
+                    'nx': market.nx,
+                    'ny': market.ny
+                }
+                return jsonify(result)
+            else:
+                logger.warning(f"현재 날씨 조회 실패: {market.name}의 날씨 데이터 없음")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'{market.name}의 날씨 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았습니다.'
+                }), 404
+        else:
+            # 시장이 없으면 격자좌표로만 조회
+            logger.warning(f"시장 없음: 격자좌표({nx}, {ny})에 해당하는 활성 시장이 없습니다.")
             return jsonify({
                 'status': 'error',
-                'message': f'해당 위치({nx}, {ny})의 날씨 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았거나 해당 지역이 활성 시장 목록에 없습니다.'
+                'message': f'해당 위치의 시장 정보가 없습니다. (격자좌표: {nx}, {ny})'
             }), 404
-
-        # 성공 응답 구성
-        result = {
-            'status': 'success',
-            'message': '데이터베이스에서 최신 날씨 데이터를 가져왔습니다.',
-            'data': weather.to_dict(),
-            'location_name': location_name or weather.location_name,
-            'nx': nx,
-            'ny': ny
-        }
-
-        return jsonify(result)
 
     except ValueError:
         return jsonify({'error': '위도와 경도는 숫자여야 합니다.'}), 400
