@@ -1558,6 +1558,88 @@ def privacy():
     from flask import render_template
     return render_template('privacy.html')
 
+# Account Deletion 페이지
+@app.route('/account-deletion', methods=['GET', 'POST'])
+def account_deletion_page():
+    """계정 삭제 페이지"""
+    from flask import render_template
+    from models import User
+
+    if request.method == 'GET':
+        # 계정 삭제 폼 표시
+        return render_template('account_deletion.html', message=None, deleted=False)
+
+    elif request.method == 'POST':
+        # 폼 데이터 가져오기
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        reason = request.form.get('reason', '웹 페이지를 통한 삭제').strip()
+
+        # 입력 검증
+        if not email or not password:
+            return render_template(
+                'account_deletion.html',
+                message='이메일과 비밀번호를 입력해주세요.',
+                message_type='error',
+                deleted=False
+            )
+
+        try:
+            # 사용자 조회
+            user = User.query.filter_by(email=email).first()
+
+            # 인증 확인
+            if not user or not user.check_password(password):
+                logger.warning(f"계정 삭제 실패: 잘못된 인증 시도 ({email})")
+                return render_template(
+                    'account_deletion.html',
+                    message='이메일 또는 비밀번호가 올바르지 않습니다.',
+                    message_type='error',
+                    deleted=False
+                )
+
+            # 이미 삭제된 계정인지 확인
+            if user.is_deleted:
+                return render_template(
+                    'account_deletion.html',
+                    message='이미 삭제된 계정입니다.',
+                    message_type='error',
+                    deleted=False
+                )
+
+            # 계정 삭제 처리
+            user.is_active = False
+            user.is_deleted = True
+            user.deleted_at = datetime.utcnow()
+            user.deletion_reason = reason if reason else '웹 페이지를 통한 삭제'
+
+            # 민감 정보 초기화
+            user.password_hash = 'deleted'
+            user.fcm_token = None
+            user.fcm_enabled = False
+
+            db.session.commit()
+
+            logger.info(f"웹 페이지를 통한 계정 삭제 완료: {email} (ID: {user.id})")
+
+            # 성공 메시지 표시
+            return render_template(
+                'account_deletion.html',
+                message='계정이 성공적으로 삭제되었습니다. 이용해 주셔서 감사합니다.',
+                message_type='success',
+                deleted=True
+            )
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"계정 삭제 중 오류 발생: {e}")
+            return render_template(
+                'account_deletion.html',
+                message=f'계정 삭제 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+                message_type='error',
+                deleted=False
+            )
+
 # 웹 데이터베이스 뷰어 라우트들 추가
 @app.route('/db-viewer')
 def db_viewer():

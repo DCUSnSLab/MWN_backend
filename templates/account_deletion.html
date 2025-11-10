@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>계정 삭제 - 전통시장 스마트 재난예보 시스템</title>
+    <style>
+        body {
+            font-family: "Malgun Gothic", sans-serif;
+            line-height: 1.6;
+            margin: 40px;
+            color: #222;
+            max-width: 600px;
+            margin: 40px auto;
+        }
+        h1 {
+            color: #003366;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .container {
+            background: #f9f9f9;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .info-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="email"],
+        input[type="password"],
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .btn-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+        button {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-delete:hover {
+            background: #c82333;
+        }
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+        .message {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .back-link a {
+            color: #003366;
+            text-decoration: none;
+        }
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>계정 삭제</h1>
+
+    <div class="container">
+        {% if message %}
+        <div class="message {{ message_type }}">
+            {{ message }}
+        </div>
+        {% endif %}
+
+        {% if not deleted %}
+        <div class="info-box">
+            <h3>⚠️ 주의사항</h3>
+            <ul>
+                <li>계정 삭제 시 모든 개인정보가 <strong>영구적으로 삭제</strong>됩니다.</li>
+                <li>관심 시장 목록, 알림 설정 등 모든 데이터가 삭제됩니다.</li>
+                <li>삭제된 계정은 <strong>복구할 수 없습니다</strong>.</li>
+            </ul>
+        </div>
+
+        <form method="POST" onsubmit="return confirm('정말로 계정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.');">
+            <div class="form-group">
+                <label for="email">이메일 *</label>
+                <input type="email" id="email" name="email" required placeholder="가입한 이메일을 입력하세요">
+            </div>
+
+            <div class="form-group">
+                <label for="password">비밀번호 *</label>
+                <input type="password" id="password" name="password" required placeholder="비밀번호를 입력하세요">
+            </div>
+
+            <div class="form-group">
+                <label for="reason">탈퇴 사유 (선택)</label>
+                <textarea id="reason" name="reason" placeholder="탈퇴하시는 이유를 알려주시면 서비스 개선에 도움이 됩니다."></textarea>
+            </div>
+
+            <div class="btn-container">
+                <button type="button" class="btn-cancel" onclick="history.back()">취소</button>
+                <button type="submit" class="btn-delete">계정 삭제</button>
+            </div>
+        </form>
+        {% else %}
+        <div class="back-link">
+            <p>계정이 성공적으로 삭제되었습니다.</p>
+            <p>이용해 주셔서 감사합니다.</p>
+        </div>
+        {% endif %}
+
+        <div class="back-link">
+            <a href="/privacy">개인정보처리방침 보기</a>
+        </div>
+    </div>
+</body>
+</html>
