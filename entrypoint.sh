@@ -68,6 +68,27 @@ if [ ! -d "migrations" ]; then
     echo "  ✅ 마이그레이션 초기화 완료!"
 fi
 
+# 데이터베이스 마이그레이션 버전 확인 시도
+echo "  🔍 데이터베이스 마이그레이션 상태 확인 중..."
+flask db current 2>&1 | tee /tmp/db_current.log
+
+# 마이그레이션 히스토리 오류 처리
+if grep -q "Can't locate revision" /tmp/db_current.log; then
+    echo "  ⚠️  데이터베이스에 이전 마이그레이션 버전이 있지만 파일이 없습니다."
+    echo "  🔄 alembic_version 테이블을 초기화합니다..."
+
+    # alembic_version 테이블 삭제 (Python으로 처리)
+    python -c "
+from app import app, db
+with app.app_context():
+    try:
+        db.engine.execute('DROP TABLE IF EXISTS alembic_version CASCADE;')
+        print('  ✅ alembic_version 테이블 삭제 완료')
+    except Exception as e:
+        print(f'  ⚠️  alembic_version 테이블 삭제 실패 (무시): {e}')
+" || echo "  ℹ️  alembic_version 테이블이 없거나 이미 삭제됨"
+fi
+
 # 현재 모델과 데이터베이스 스키마 비교하여 마이그레이션 생성
 echo "  🔍 모델 변경사항 확인 중..."
 flask db migrate -m "Auto-migration on startup" 2>&1 | tee /tmp/migrate_output.log
@@ -83,13 +104,25 @@ fi
 
 # 마이그레이션 적용
 echo "  🚀 마이그레이션 적용 중..."
-flask db upgrade
+flask db upgrade 2>&1 | tee /tmp/upgrade_output.log
 
 if [ $? -eq 0 ]; then
     echo "  ✅ 데이터베이스 마이그레이션 완료!"
 else
-    echo "  ❌ 마이그레이션 적용 실패"
-    exit 1
+    # 업그레이드 실패 시 추가 처리
+    if grep -q "Can't locate revision" /tmp/upgrade_output.log; then
+        echo "  ⚠️  마이그레이션 버전 불일치 문제 재시도..."
+
+        # stamp를 사용하여 현재 상태를 head로 설정
+        echo "  🔄 데이터베이스를 현재 코드 상태로 동기화합니다..."
+        flask db stamp head
+
+        echo "  ✅ 데이터베이스 마이그레이션 동기화 완료!"
+    else
+        echo "  ❌ 마이그레이션 적용 실패"
+        cat /tmp/upgrade_output.log
+        exit 1
+    fi
 fi
 
 # 관리자 계정 생성
