@@ -583,49 +583,166 @@ class WeatherAlertSystem:
         if alerts.get('high_temp'):
             alert = alerts['high_temp'][0]
             temp = alert.get('temperature')
-            return (
-                f"🌡️ {market_name} 폭염 주의보",
-                f"{alert['time_str']}경 최고 기온 {temp}°C 예상됩니다. 건강에 유의하세요."
-            )
+
+            # 폭염 단계 결정 (기온 기준)
+            if temp >= 35:
+                alert_level = "위험단계"
+                temp_desc = "폭염"
+            elif temp >= 33:
+                alert_level = "경계단계"
+                temp_desc = "폭염"
+            else:
+                alert_level = "주의단계"
+                temp_desc = "고온"
+
+            title = f"[{market_name} 폭염예보 - {alert_level}]"
+
+            # 본문 생성
+            time_str = alert['time_str']
+
+            body = f"""{time_str}경 최고기온 {temp}°C 이상 {temp_desc}이 예상됩니다.
+
+[조치1] 냉장·냉동식품의 보관온도를 점검하고, 변질우려 제품은 폐기 바랍니다.
+
+[조치2] 상인 및 고객을 위한 냉방기 가동과 충분한 환기를 유지 바랍니다.
+
+[조치3] 노약자 근무자는 충분한 휴식을 취하고, 음료수를 비치해 주세요.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)"""
+
+            return (title, body)
 
         if alerts.get('low_temp'):
             alert = alerts['low_temp'][0]
             temp = alert.get('temperature')
-            return (
-                f"❄️ {market_name} 한파 주의보",
-                f"{alert['time_str']}경 최저 기온 {temp}°C 예상됩니다. 방한에 유의하세요."
-            )
+
+            # 한파 단계 결정 (기온 기준)
+            if temp <= -15:
+                alert_level = "위험단계"
+                temp_desc = "강한 한파"
+            elif temp <= -12:
+                alert_level = "경계단계"
+                temp_desc = "한파"
+            else:
+                alert_level = "주의단계"
+                temp_desc = "한파"
+
+            title = f"[{market_name} 한파예보 - {alert_level}]"
+
+            # 본문 생성
+            time_str = alert['time_str']
+
+            body = f"""{time_str}경 기온이 {temp}°C 이하로 떨어질 것으로 예상됩니다.
+
+[조치1] 수도관과 보일러 배관의 동파 방지를 위해 보온 덮개를 설치 바랍니다.
+
+[조치2] 난방기 과열 및 전열기 주변 인화물 정리를 철저히 해주세요.
+
+[조치3] 점포 내 결빙구간(출입구, 배수로 등)을 미리 점검하고 제빙제를 비치 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)"""
+
+            return (title, body)
 
         if alerts.get('strong_wind'):
             alert = alerts['strong_wind'][0]
             wind = alert.get('wind_speed')
-            return (
-                f"💨 {market_name} 강풍 주의보",
-                f"{alert['time_str']}경 풍속 {wind}m/s 예상됩니다. 외출 시 주의하세요."
-            )
+
+            # 강풍 단계 결정 (풍속 기준)
+            if wind >= 20:
+                alert_level = "위험단계"
+                wind_desc = "매우 강한 바람"
+            elif wind >= 17:
+                alert_level = "경계단계"
+                wind_desc = "강풍"
+            else:
+                alert_level = "주의단계"
+                wind_desc = "강풍"
+
+            title = f"[{market_name} 강풍예보 - {alert_level}]"
+
+            # 본문 생성
+            time_str = alert['time_str']
+
+            body = f"""{time_str}경부터 {market_name} 풍속 {wind}m/s 이상 {wind_desc}이 예상됩니다.
+
+[조치1] 가스밸브·전열기 주변 인화성 물질(박스, 천 등)을 제거 바랍니다.
+
+[조치2] 상인회 주관으로 순찰을 강화하고, 화재대피안내 및 방송 바랍니다.
+
+[조치3] 비상소화장치(소화기·소화전) 위치를 확인하고 사용법을 숙지하세요.
+
+[조치4] 출입구 주변 적재물을 정리하여 긴급대피 통로를 확보 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)"""
+
+            return (title, body)
 
         if alerts.get('snow'):
             alert = alerts['snow'][0]
             snow = alert.get('snow_amount')
-            return (
-                f"⛄ {market_name} 적설 예보",
-                f"{alert['time_str']}경 적설량 {snow}cm 예상됩니다."
-            )
+
+            # 폭설 단계 결정 (적설량 기준)
+            if snow >= 10:
+                alert_level = "경고단계"
+                snow_desc = "폭설"
+            elif snow >= 5:
+                alert_level = "주의단계"
+                snow_desc = "대설"
+            else:
+                alert_level = "관심단계"
+                snow_desc = "적설"
+
+            title = f"[{market_name} 폭설예보 - {alert_level}]"
+
+            # 본문 생성
+            time_str = alert['time_str']
+
+            body = f"""{time_str}경부터 {market_name}에 적설량 {snow}cm 이상 {snow_desc}이 예상됩니다.
+
+[조치1] 인근 가설천막 및 차양에 눈이 쌓이지 않도록 수시 점검 바랍니다.
+
+[조치2] 지붕 위 적설은 붕괴 위험이 있으므로 제설장비를 이용해 즉시 제거 바랍니다.
+
+[조치3] 통로 및 계단에는 미끄럼방지제(모래, 염화칼슘 등)를 살포해 주시기 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)"""
+
+            return (title, body)
 
         if alerts.get('rain'):
             alert = alerts['rain'][0]
             pop = alert.get('pop')
             description = alert.get('description', '비')
-            if pop:
-                return (
-                    f"🌧️ {market_name} 강수 예보",
-                    f"{alert['time_str']}경 {description} 가능성 {pop}% 예상됩니다."
-                )
+
+            # 강수 단계 결정 (강수확률 기준)
+            if pop and pop >= 70:
+                alert_level = "주의단계"
+                rain_desc = "폭우" if pop >= 80 else "강우"
+            elif pop and pop >= 50:
+                alert_level = "관심단계"
+                rain_desc = "강우"
             else:
-                return (
-                    f"🌧️ {market_name} 강수 예보",
-                    f"{alert['time_str']}경 {description} 예상됩니다."
-                )
+                alert_level = "관심단계"
+                rain_desc = description
+
+            title = f"[{market_name} {rain_desc}예보 - {alert_level}]"
+
+            # 본문 생성
+            time_str = alert['time_str']
+            prob_str = f"강수확률 {pop}%" if pop else rain_desc
+
+            body = f"""{time_str}경부터 {market_name} 인근지역 {prob_str} 예상됩니다.
+
+[조치1] 시장 입구 및 주요 통로의 배수구 덮개를 열어 배수로 확보 바랍니다.
+
+[조치2] 저지대 점포 및 창고 내 전기제품을 고지대로 이동시켜 주세요.
+
+[조치3] 침수 대비를 위해 배수펌프 및 비닐커버를 사전에 점검 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)"""
+
+            return (title, body)
 
         # 기본 메시지
         return (
