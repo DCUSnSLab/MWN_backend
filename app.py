@@ -221,6 +221,45 @@ def logout():
     """로그아웃 (클라이언트에서 토큰 삭제)"""
     return jsonify({'message': '로그아웃되었습니다.'})
 
+@app.route('/api/auth/delete', methods=['POST'])
+def delete_account():
+    """회원 탈퇴"""
+    from auth_utils import login_required
+    from models import User
+
+    @login_required
+    def _delete_account(current_user):
+        data = request.get_json() or {}
+        deletion_reason = data.get('reason', 'No reason provided.')
+
+        try:
+            # 사용자 비활성화 및 탈퇴 처리
+            current_user.is_active = False
+            current_user.is_deleted = True
+            current_user.deleted_at = datetime.utcnow()
+            current_user.deletion_reason = deletion_reason
+
+            # 민감 정보 및 기능적 데이터 초기화
+            current_user.password_hash = 'deleted'  # nullable=False 이므로 None 대신 비활성 상태 표시
+            current_user.fcm_token = None
+            current_user.fcm_enabled = False
+            
+            db.session.commit()
+            
+            logger.info(f"User {current_user.email} (ID: {current_user.id}) has been deleted.")
+
+            return jsonify({
+                'status': 'success',
+                'message': '회원 탈퇴 처리가 완료되었습니다. 이용해주셔서 감사합니다.'
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error during account deletion for user {current_user.email}: {e}")
+            return jsonify({'error': f'회원 탈퇴 중 오류가 발생했습니다: {str(e)}'}), 500
+
+    return _delete_account()
+
 # FCM 관련 API 엔드포인트들
 @app.route('/api/fcm/register', methods=['POST'])
 def register_fcm_token():

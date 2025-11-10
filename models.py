@@ -19,6 +19,11 @@ class User(db.Model):
     email_verified = db.Column(db.Boolean, default=False)
     last_login = db.Column(db.DateTime)
     
+    # 사용자 탈퇴 관련 필드
+    is_deleted = db.Column(db.Boolean, default=False)
+    deleted_at = db.Column(db.DateTime)
+    deletion_reason = db.Column(db.Text)
+    
     # FCM 관련 필드들
     fcm_token = db.Column(db.Text)  # FCM 등록 토큰
     fcm_enabled = db.Column(db.Boolean, default=True)  # FCM 알림 활성화 여부
@@ -67,7 +72,10 @@ class User(db.Model):
                 'end_time': '08:00',
                 'all_day': False,
                 'days': ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-            }
+            },
+            'is_deleted': self.is_deleted,
+            'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
+            'deletion_reason': self.deletion_reason
         }
         
         # 민감한 정보는 관리자만 볼 수 있도록
