@@ -1006,7 +1006,7 @@ def get_current_weather():
         nx, ny = convert_to_grid(lat, lon)
 
         # 해당 격자좌표를 가진 시장 찾기
-        market = Market.query.filter_by(nx=nx, ny=ny, is_active=True).first()
+        market = Market.query.filter_by(nx=nx + 1, ny=ny + 1, is_active=True).first()
 
         if market:
             # 시장이 있으면 해당 시장의 최신 날씨 데이터 조회
