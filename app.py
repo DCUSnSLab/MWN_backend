@@ -993,7 +993,8 @@ def get_current_weather():
     data = request.get_json()
 
     # 필수 파라미터 검증
-    if 'latitude' not in data or 'longitude' not in data:
+    if not data or 'latitude' not in data or 'longitude' not in data:
+        logger.warning(f"현재 날씨 조회 실패: 필수 파라미터 누락 (data={data})")
         return jsonify({'error': '위도(latitude)와 경도(longitude)가 필요합니다.'}), 400
 
     try:
@@ -1012,6 +1013,7 @@ def get_current_weather():
         ).order_by(Weather.created_at.desc()).first()
 
         if not weather:
+            logger.warning(f"현재 날씨 조회 실패: 데이터 없음 (위치: {location_name}, 격자좌표: {nx}, {ny})")
             return jsonify({
                 'status': 'error',
                 'message': f'해당 위치({nx}, {ny})의 날씨 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았거나 해당 지역이 활성 시장 목록에 없습니다.'
