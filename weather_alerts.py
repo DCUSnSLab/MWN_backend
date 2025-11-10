@@ -249,7 +249,7 @@ class WeatherAlertSystem:
                     Market.is_active == True,
                     UserMarketInterest.is_active == True,
                     UserMarketInterest.notification_enabled == True
-                ).distinct().all()
+                ).distinct(Market.id).all()
                 
                 if not markets_with_interest:
                     return {
@@ -651,7 +651,7 @@ class WeatherAlertSystem:
                     Market.is_active == True,
                     UserMarketInterest.is_active == True,
                     UserMarketInterest.notification_enabled == True
-                ).distinct().all()
+                ).distinct(Market.id).all()
 
                 if not markets_with_interest:
                     return {

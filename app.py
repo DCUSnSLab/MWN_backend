@@ -89,8 +89,8 @@ def register():
     name = data.get('name').strip()
     email = data.get('email').strip().lower()
     password = data.get('password')
-    phone = data.get('phone', '').strip()
-    location = data.get('location', '').strip()
+    phone = (data.get('phone') or '').strip()
+    location = (data.get('location') or '').strip()
     
     # 이메일 형식 검증
     if not validate_email(email):
