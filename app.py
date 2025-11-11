@@ -221,6 +221,177 @@ def logout():
     """로그아웃 (클라이언트에서 토큰 삭제)"""
     return jsonify({'message': '로그아웃되었습니다.'})
 
+@app.route('/api/auth/verify-password', methods=['POST'])
+def verify_password():
+    """비밀번호 확인 (프로필 수정 전 본인 인증용)"""
+    from auth_utils import login_required
+    from models import PasswordVerificationAttempt
+
+    @login_required
+    def _verify_password(current_user):
+        data = request.get_json()
+
+        if not data or not data.get('password'):
+            return jsonify({'error': '비밀번호를 입력해주세요.'}), 400
+
+        # 계정 잠금 체크 (15분 내 10회 실패)
+        is_locked, failure_count = PasswordVerificationAttempt.check_account_lock(
+            user_id=current_user.id,
+            minutes=15,
+            max_failures=10
+        )
+
+        if is_locked:
+            logger.warning(f"Account locked for user {current_user.email} due to too many failed password verification attempts")
+            return jsonify({
+                'error': '너무 많은 시도로 인해 계정이 일시적으로 잠겼습니다. 15분 후 다시 시도해주세요.',
+                'locked': True,
+                'failure_count': failure_count
+            }), 429
+
+        # Rate limit 체크 (1분 내 5회)
+        is_allowed, remaining = PasswordVerificationAttempt.check_rate_limit(
+            user_id=current_user.id,
+            minutes=1,
+            max_attempts=5
+        )
+
+        if not is_allowed:
+            logger.warning(f"Rate limit exceeded for user {current_user.email} during password verification")
+            return jsonify({
+                'error': '너무 많은 요청입니다. 잠시 후 다시 시도해주세요.',
+                'remaining_attempts': remaining
+            }), 429
+
+        # 비밀번호 확인
+        password = data.get('password')
+        is_valid = current_user.check_password(password)
+
+        # 시도 기록
+        ip_address = request.remote_addr
+        PasswordVerificationAttempt.record_attempt(
+            user_id=current_user.id,
+            success=is_valid,
+            ip_address=ip_address
+        )
+
+        if is_valid:
+            logger.info(f"Password verification successful for user {current_user.email}")
+            return jsonify({
+                'valid': True,
+                'message': '비밀번호가 확인되었습니다.'
+            })
+        else:
+            logger.warning(f"Password verification failed for user {current_user.email}")
+            return jsonify({
+                'valid': False,
+                'message': '비밀번호가 일치하지 않습니다.'
+            }), 401
+
+    return _verify_password()
+
+
+@app.route('/api/auth/profile', methods=['PUT'])
+def update_profile():
+    """사용자 프로필 업데이트"""
+    from auth_utils import login_required, validate_email, validate_password
+    from models import User
+
+    @login_required
+    def _update_profile(current_user):
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': '업데이트할 정보를 입력해주세요.'}), 400
+
+        updated_fields = []
+
+        try:
+            # 이름 업데이트
+            if 'name' in data:
+                name = data.get('name', '').strip()
+                if not name:
+                    return jsonify({'error': '이름은 필수 입력사항입니다.'}), 400
+                current_user.name = name
+                updated_fields.append('name')
+
+            # 이메일 업데이트
+            if 'email' in data:
+                email = data.get('email', '').strip().lower()
+
+                # 이메일 형식 검증
+                if not validate_email(email):
+                    return jsonify({'error': '올바른 이메일 형식이 아닙니다.'}), 400
+
+                # 중복 확인 (현재 사용자 제외)
+                existing_user = User.query.filter(
+                    User.email == email,
+                    User.id != current_user.id
+                ).first()
+
+                if existing_user:
+                    return jsonify({'error': '이미 사용 중인 이메일입니다.'}), 400
+
+                current_user.email = email
+                # 이메일 변경 시 재인증 필요할 수 있음
+                current_user.email_verified = False
+                updated_fields.append('email')
+                logger.info(f"Email changed for user {current_user.id}. Email verification reset.")
+
+            # 비밀번호 업데이트
+            if 'password' in data:
+                password = data.get('password')
+
+                # 비밀번호 강도 검증
+                is_valid, message = validate_password(password)
+                if not is_valid:
+                    return jsonify({'error': message}), 400
+
+                current_user.set_password(password)
+                updated_fields.append('password')
+                logger.info(f"Password changed for user {current_user.email}")
+
+            # 전화번호 업데이트
+            if 'phone' in data:
+                phone = data.get('phone', '').strip()
+                current_user.phone = phone if phone else None
+                updated_fields.append('phone')
+
+            # 위치 업데이트
+            if 'location' in data:
+                location = data.get('location', '').strip()
+                current_user.location = location if location else None
+                updated_fields.append('location')
+
+            # 업데이트된 필드가 없는 경우
+            if not updated_fields:
+                return jsonify({'message': '업데이트할 정보가 없습니다.'}), 400
+
+            # 변경사항 저장
+            current_user.updated_at = datetime.utcnow()
+            db.session.commit()
+
+            logger.info(f"Profile updated for user {current_user.email}. Updated fields: {', '.join(updated_fields)}")
+
+            # 비밀번호는 응답에서 제외
+            user_dict = current_user.to_dict()
+            user_dict.pop('password_hash', None)
+
+            return jsonify({
+                'status': 'success',
+                'message': '프로필이 성공적으로 업데이트되었습니다.',
+                'updated_fields': updated_fields,
+                'user': user_dict
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error updating profile for user {current_user.email}: {e}")
+            return jsonify({'error': f'프로필 업데이트 중 오류가 발생했습니다: {str(e)}'}), 500
+
+    return _update_profile()
+
+
 @app.route('/api/auth/delete', methods=['POST'])
 def delete_account():
     """회원 탈퇴"""
@@ -243,9 +414,9 @@ def delete_account():
             current_user.password_hash = 'deleted'  # nullable=False 이므로 None 대신 비활성 상태 표시
             current_user.fcm_token = None
             current_user.fcm_enabled = False
-            
+
             db.session.commit()
-            
+
             logger.info(f"User {current_user.email} (ID: {current_user.id}) has been deleted.")
 
             return jsonify({
@@ -1009,7 +1180,7 @@ def get_current_weather():
         # 이런 미친 코드.. 왜 이런 일이 발생했을까요
         # 앱 쪽에서 시장 이름이 아닌 시장의 위도, 경도를 전달받는데(대체 왜?)
         # 전달받은 위경도를 기상청 API에 호출하기 위한 격자 좌표로 변경해서 호출을 진행합니다
-        # 이 과정에서 약간의 오차가 발생해서 아래와 같이 변환 결과에 1을 더해줘야 정상적인 값이 나오는걸 확인했습니다
+        # 이 과정에서 약간의 오차가 발생해서 아래와 같이 변환 결과에 1을 더해줘야 정상적인 값이 나오는걸 확인했습니다`1
         market = Market.query.filter_by(nx=nx + 1, ny=ny + 1, is_active=True).first()
 
         if market:

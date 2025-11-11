@@ -531,3 +531,92 @@ class MarketAlarmLog(db.Model):
 
     def __repr__(self):
         return f'<MarketAlarmLog {self.id}: {self.market.name if self.market else "Unknown"} - {self.alert_type}>'
+
+
+class PasswordVerificationAttempt(db.Model):
+    """비밀번호 확인 시도 기록 (Rate limiting용)"""
+    __tablename__ = 'password_verification_attempts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    attempted_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    success = db.Column(db.Boolean, default=False)
+    ip_address = db.Column(db.String(45))  # IPv6 지원
+
+    # 관계
+    user = db.relationship('User', backref=db.backref('password_attempts', lazy='dynamic'))
+
+    @classmethod
+    def check_rate_limit(cls, user_id, minutes=1, max_attempts=5):
+        """
+        Rate limit 체크
+
+        Args:
+            user_id: 사용자 ID
+            minutes: 확인할 시간 범위 (분)
+            max_attempts: 최대 시도 횟수
+
+        Returns:
+            tuple: (is_allowed, remaining_attempts)
+        """
+        from datetime import timedelta
+
+        cutoff_time = datetime.utcnow() - timedelta(minutes=minutes)
+
+        recent_attempts = cls.query.filter(
+            cls.user_id == user_id,
+            cls.attempted_at >= cutoff_time
+        ).count()
+
+        is_allowed = recent_attempts < max_attempts
+        remaining = max(0, max_attempts - recent_attempts)
+
+        return is_allowed, remaining
+
+    @classmethod
+    def check_account_lock(cls, user_id, minutes=15, max_failures=10):
+        """
+        계정 잠금 체크 (실패 횟수 기준)
+
+        Args:
+            user_id: 사용자 ID
+            minutes: 확인할 시간 범위 (분)
+            max_failures: 최대 실패 횟수
+
+        Returns:
+            tuple: (is_locked, failure_count)
+        """
+        from datetime import timedelta
+
+        cutoff_time = datetime.utcnow() - timedelta(minutes=minutes)
+
+        failure_count = cls.query.filter(
+            cls.user_id == user_id,
+            cls.attempted_at >= cutoff_time,
+            cls.success == False
+        ).count()
+
+        is_locked = failure_count >= max_failures
+
+        return is_locked, failure_count
+
+    @classmethod
+    def record_attempt(cls, user_id, success, ip_address=None):
+        """시도 기록"""
+        attempt = cls(
+            user_id=user_id,
+            success=success,
+            ip_address=ip_address
+        )
+        db.session.add(attempt)
+        db.session.commit()
+        return attempt
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'attempted_at': self.attempted_at.isoformat() if self.attempted_at else None,
+            'success': self.success,
+            'ip_address': self.ip_address
+        }
