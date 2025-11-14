@@ -1475,6 +1475,195 @@ def manual_weather_alert_check():
 
     return _manual_weather_alert_check()
 
+@app.route('/api/admin/weather-alerts/test-to-user', methods=['POST'])
+def test_weather_alert_to_user():
+    """관리자용 테스트: 특정 사용자에게 날씨 알림 전송"""
+    from auth_utils import admin_required
+    from fcm_integration.fcm_utils import fcm_service
+    from models import User, Market
+    import json
+
+    @admin_required
+    def _test_weather_alert_to_user(current_user):
+        try:
+            data = request.get_json()
+
+            # 필수 파라미터 확인
+            if not data:
+                return jsonify({'error': '요청 데이터가 없습니다.'}), 400
+
+            user_id = data.get('user_id')
+            market_id = data.get('market_id')
+            alert_type = data.get('alert_type', 'rain')  # rain, heat, cold, wind, snow
+
+            if not user_id:
+                return jsonify({'error': 'user_id는 필수 입력사항입니다.'}), 400
+
+            if not market_id:
+                return jsonify({'error': 'market_id는 필수 입력사항입니다.'}), 400
+
+            # 사용자 조회
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({'error': f'사용자 ID {user_id}를 찾을 수 없습니다.'}), 404
+
+            # 시장 조회
+            market = Market.query.get(market_id)
+            if not market:
+                return jsonify({'error': f'시장 ID {market_id}를 찾을 수 없습니다.'}), 404
+
+            # FCM 토큰 확인
+            if not user.can_receive_fcm():
+                return jsonify({
+                    'error': f'사용자 {user.name}({user.email})은 FCM 알림을 받을 수 없는 상태입니다.',
+                    'reason': {
+                        'is_active': user.is_active,
+                        'fcm_enabled': user.fcm_enabled,
+                        'has_fcm_token': user.fcm_token is not None
+                    }
+                }), 400
+
+            # 방해금지 시간 체크 (테스트는 무시할 수 있음)
+            is_dnd = user.is_in_do_not_disturb_time()
+            ignore_dnd = data.get('ignore_dnd', False)
+
+            if is_dnd and not ignore_dnd:
+                return jsonify({
+                    'error': f'사용자 {user.name}({user.email})은 현재 방해금지 시간입니다.',
+                    'hint': 'ignore_dnd: true를 설정하면 방해금지 시간을 무시하고 전송할 수 있습니다.'
+                }), 400
+
+            # 알림 타입별 메시지 생성
+            if alert_type == 'rain':
+                title = f"[{market.name} 강우예보 - 테스트]"
+                body = f"""11월 13일 15시경부터 {market.name} 인근지역 비 또는 눈 70% 이상 예상됩니다.
+
+[조치1] 시장 입구 및 주요 통로의 배수구 덮개를 열어 배수로 확보 바랍니다.
+
+[조치2] 저지대 점포 및 창고 내 전기제품을 고지대로 이동시켜 주세요.
+
+[조치3] 침수 대비를 위해 배수펌프 및 비닐커버를 사전에 점검 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)
+** 이것은 테스트 알림입니다"""
+
+            elif alert_type == 'heat':
+                title = f"[{market.name} 폭염예보 - 테스트]"
+                body = f"""11월 13일 14시경 최고기온 35°C 이상 폭염이 예상됩니다.
+
+[조치1] 냉장·냉동식품의 보관온도를 점검하고, 변질우려 제품은 폐기 바랍니다.
+
+[조치2] 상인 및 고객을 위한 냉방기 가동과 충분한 환기를 유지 바랍니다.
+
+[조치3] 노약자 근무자는 충분한 휴식을 취하고, 음료수를 비치해 주세요.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)
+** 이것은 테스트 알림입니다"""
+
+            elif alert_type == 'cold':
+                title = f"[{market.name} 한파예보 - 테스트]"
+                body = f"""11월 13일 06시경 기온이 -15°C 이하로 떨어질 것으로 예상됩니다.
+
+[조치1] 수도관과 보일러 배관의 동파 방지를 위해 보온 덮개를 설치 바랍니다.
+
+[조치2] 난방기 과열 및 전열기 주변 인화물 정리를 철저히 해주세요.
+
+[조치3] 점포 내 결빙구간(출입구, 배수로 등)을 미리 점검하고 제빙제를 비치 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)
+** 이것은 테스트 알림입니다"""
+
+            elif alert_type == 'wind':
+                title = f"[{market.name} 강풍예보 - 테스트]"
+                body = f"""11월 13일 14시경부터 {market.name} 풍속 20m/s 이상 강풍이 예상됩니다.
+
+[조치1] 가스밸브·전열기 주변 인화성 물질(박스, 천 등)을 제거 바랍니다.
+
+[조치2] 상인회 주관으로 순찰을 강화하고, 화재대피안내 및 방송 바랍니다.
+
+[조치3] 비상소화장치(소화기·소화전) 위치를 확인하고 사용법을 숙지하세요.
+
+[조치4] 출입구 주변 적재물을 정리하여 긴급대피 통로를 확보 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)
+** 이것은 테스트 알림입니다"""
+
+            elif alert_type == 'snow':
+                title = f"[{market.name} 폭설예보 - 테스트]"
+                body = f"""11월 13일 15시경부터 {market.name}에 적설량 10cm 이상 폭설이 예상됩니다.
+
+[조치1] 인근 가설천막 및 차양에 눈이 쌓이지 않도록 수시 점검 바랍니다.
+
+[조치2] 지붕 위 적설은 붕괴 위험이 있으므로 제설장비를 이용해 즉시 제거 바랍니다.
+
+[조치3] 통로 및 계단에는 미끄럼방지제(모래, 염화칼슘 등)를 살포해 주시기 바랍니다.
+
+* 긴급연락: ☎119 또는 공단 지역본부 (기상정보 출처: 기상청 특보시스템)
+** 이것은 테스트 알림입니다"""
+
+            else:
+                return jsonify({
+                    'error': f'알 수 없는 알림 타입: {alert_type}',
+                    'available_types': ['rain', 'heat', 'cold', 'wind', 'snow']
+                }), 400
+
+            # 커스텀 메시지가 제공된 경우 사용
+            if data.get('custom_title'):
+                title = data.get('custom_title')
+            if data.get('custom_body'):
+                body = data.get('custom_body')
+
+            # FCM 데이터 생성 (모든 값은 문자열이어야 함)
+            notification_data = {
+                'type': f'{alert_type}_alert_test',
+                'market_id': str(market.id),
+                'market_name': market.name,
+                'is_test': 'true',
+                'sent_by': current_user.email
+            }
+
+            # FCM 알림 전송
+            result = fcm_service.send_to_token(
+                token=user.fcm_token,
+                title=title,
+                body=body,
+                data=notification_data
+            )
+
+            logger.info(f"관리자 {current_user.email}가 사용자 {user.email}에게 {alert_type} 테스트 알림 전송")
+
+            if result and result.get('success'):
+                return jsonify({
+                    'status': 'success',
+                    'message': f'사용자 {user.name}({user.email})에게 {alert_type} 알림이 전송되었습니다.',
+                    'data': {
+                        'user_id': user.id,
+                        'user_name': user.name,
+                        'user_email': user.email,
+                        'market_id': market.id,
+                        'market_name': market.name,
+                        'alert_type': alert_type,
+                        'title': title,
+                        'is_dnd_ignored': is_dnd and ignore_dnd,
+                        'fcm_result': result
+                    }
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'FCM 알림 전송 실패',
+                    'error': result.get('error') if result else 'Unknown error'
+                }), 500
+
+        except Exception as e:
+            logger.error(f"테스트 알림 전송 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'테스트 알림 전송 실패: {str(e)}'}), 500
+
+    return _test_weather_alert_to_user()
+
+
 @app.route('/api/admin/weather-alerts/test-summary', methods=['POST'])
 def test_weather_summary_alert():
     """관리자용 테스트: 모든 관심 시장의 날씨 요약 알림 전송"""
