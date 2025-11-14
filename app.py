@@ -1623,7 +1623,7 @@ def test_weather_alert_to_user():
             }
 
             # FCM 알림 전송
-            result = fcm_service.send_to_token(
+            success = fcm_service.send_notification(
                 token=user.fcm_token,
                 title=title,
                 body=body,
@@ -1632,7 +1632,7 @@ def test_weather_alert_to_user():
 
             logger.info(f"관리자 {current_user.email}가 사용자 {user.email}에게 {alert_type} 테스트 알림 전송")
 
-            if result and result.get('success'):
+            if success:
                 return jsonify({
                     'status': 'success',
                     'message': f'사용자 {user.name}({user.email})에게 {alert_type} 알림이 전송되었습니다.',
@@ -1645,14 +1645,14 @@ def test_weather_alert_to_user():
                         'alert_type': alert_type,
                         'title': title,
                         'is_dnd_ignored': is_dnd and ignore_dnd,
-                        'fcm_result': result
+                        'fcm_result': {'success': success}
                     }
                 })
             else:
                 return jsonify({
                     'status': 'error',
                     'message': 'FCM 알림 전송 실패',
-                    'error': result.get('error') if result else 'Unknown error'
+                    'error': 'FCM notification failed'
                 }), 500
 
         except Exception as e:
