@@ -898,7 +898,7 @@ def send_test_weather_summary_to_all_users() -> Dict[str, Any]:
                 Market.ny.isnot(None),
                 UserMarketInterest.is_active == True,
                 UserMarketInterest.notification_enabled == True
-            ).distinct().all()
+            ).distinct(Market.id).all()
 
             if not markets_with_interest:
                 return {
