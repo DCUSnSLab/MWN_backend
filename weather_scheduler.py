@@ -232,6 +232,26 @@ class WeatherScheduler:
 
         except Exception as e:
             logger.error(f"날씨 알림 작업 중 오류: {str(e)}")
+
+    def cleanup_old_weather_data(self, days=2):
+        """오래된 날씨 데이터 삭제 (기본 2일)"""
+        logger.info(f"오래된 날씨 데이터 삭제 작업 시작 ({days}일 이상 경과)")
+        try:
+            from datetime import timedelta
+            from app import app
+            
+            with app.app_context():
+                cutoff_date = datetime.now() - timedelta(days=days)
+                
+                # 삭제 대상 조회 및 삭제
+                deleted_count = Weather.query.filter(Weather.created_at < cutoff_date).delete()
+                db.session.commit()
+                
+                logger.info(f"오래된 날씨 데이터 삭제 완료: {deleted_count}개 레코드 삭제됨")
+                
+        except Exception as e:
+            logger.error(f"오래된 데이터 삭제 중 오류: {str(e)}")
+            # 롤백은 자동 처리됨 (새 세션)
     
     def start(self):
         """스케줄러 시작"""
@@ -258,6 +278,16 @@ class WeatherScheduler:
             replace_existing=True
         )
         logger.info("날씨 알림 작업 등록: 매 시간 정각 (비/폭염/한파/강풍 등)")
+        
+        # 오래된 데이터 삭제 작업 등록 (매일 새벽 3시)
+        self.scheduler.add_job(
+            func=self.cleanup_old_weather_data,
+            trigger=CronTrigger(hour='3', minute='0'),
+            id='weather_cleanup_job',
+            name='오래된 날씨 데이터 삭제 (매일 03:00)',
+            replace_existing=True
+        )
+        logger.info("오래된 데이터 삭제 작업 등록: 매일 03:00")
 
         # 스케줄러 시작
         self.scheduler.start()

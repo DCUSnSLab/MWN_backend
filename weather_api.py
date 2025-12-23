@@ -281,16 +281,40 @@ class KMAWeatherAPI:
         return list(forecast_groups.values())
     
     def _save_weather_data(self, weather_data):
-        """날씨 데이터를 데이터베이스에 저장 (Flask 앱 컨텍스트가 있을 때만)"""
+        """날씨 데이터를 데이터베이스에 저장 (Flask 앱 컨텍스트가 있을 때만) - 중복 체크 포함"""
         try:
             # Flask 앱과 데이터베이스 모듈을 동적으로 import
             from app import db
             from models import Weather
             
+            # 중복 체크 필터 생성
+            filters = {
+                'nx': weather_data['nx'],
+                'ny': weather_data['ny'],
+                'base_date': weather_data['base_date'],
+                'base_time': weather_data['base_time'],
+                'api_type': weather_data['api_type']
+            }
+            
+            # 예보 데이터인 경우 fcst_date, fcst_time도 체크
+            if weather_data.get('fcst_date') and weather_data.get('fcst_time'):
+                filters['fcst_date'] = weather_data['fcst_date']
+                filters['fcst_time'] = weather_data['fcst_time']
+            
+            # 이미 존재하는 데이터인지 확인
+            existing = Weather.query.filter_by(**filters).first()
+            
+            if existing:
+                # 이미 존재하면 업데이트하거나 건너뜀 (여기서는 건너뜀)
+                # 필요 시 업데이트 로직 추가: for key, value in weather_data.items(): setattr(existing, key, value)
+                return existing.id
+            
+            # 존재하지 않으면 새로 생성
             weather = Weather(**weather_data)
             db.session.add(weather)
             db.session.commit()
             return weather.id
+            
         except ImportError:
             # Flask 앱 컨텍스트가 없는 경우 (예제 실행 시)
             print("ℹ️  데이터베이스 저장 건너뜀 (Flask 앱 컨텍스트 없음)")
