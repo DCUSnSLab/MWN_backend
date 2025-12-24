@@ -744,20 +744,85 @@ class WeatherAlertSystem:
 
             return (title, body)
 
-        # 기본 메시지
-        return (
-            f"🌤️ {market_name} 날씨 알림",
-            f"향후 {hours}시간 내 주의할 날씨가 예상됩니다."
-        )
+    def send_individual_alert_to_user(self, user: User, market: Market, weather_info: Dict[str, Any]) -> bool:
+        """개별 사용자에게 단일 시장 날씨 알림 전송"""
+        try:
+            alerts = weather_info.get('alerts', {})
+            title, body = self._create_weather_alert_message(market.name, alerts, weather_info['checked_hours'])
+
+            # FCM 알림 전송
+            import json
+            notification_data = {
+                'type': 'weather_alert',
+                'market_id': str(market.id),
+                'market_name': market.name,
+                'alerts': json.dumps(alerts, ensure_ascii=False)
+            }
+
+            return fcm_service.send_notification(
+                token=user.fcm_token,
+                title=title,
+                body=body,
+                data=notification_data
+            )
+        except Exception as e:
+            logger.error(f"사용자 {user.id}에게 개별 알림 전송 실패: {e}")
+            return False
+
+    def send_summary_alert_to_user(self, user: User, alerts_list: List[Dict[str, Any]]) -> bool:
+        """개별 사용자에게 요약된 날씨 알림 전송 (3개 이상 시장)"""
+        try:
+            market_names = [item['market'].name for item in alerts_list]
+            count = len(market_names)
+            
+            # 제목 생성
+            title = f"{count}개 시장 날씨 알림"
+            
+            # 본문 생성 (시장A, 시장B 외 N곳...)
+            if count <= 2:
+                markets_str = ", ".join(market_names)
+            else:
+                markets_str = f"{market_names[0]}, {market_names[1]} 외 {count-2}곳"
+                
+            body = f"{markets_str}에 비, 폭염 등 주의할 날씨가 예상됩니다. 앱에서 상세 내용을 확인하세요."
+
+            # 데이터 페이로드 생성 (간소화)
+            import json
+            summary_data = []
+            for item in alerts_list:
+                market = item['market']
+                alert_types = list(item['weather_info'].get('alerts', {}).keys())
+                summary_data.append({
+                    'market_id': market.id,
+                    'market_name': market.name,
+                    'types': alert_types
+                })
+
+            notification_data = {
+                'type': 'weather_summary_alert',
+                'count': str(count),
+                'summary': json.dumps(summary_data, ensure_ascii=False)
+            }
+
+            return fcm_service.send_notification(
+                token=user.fcm_token,
+                title=title,
+                body=body,
+                data=notification_data
+            )
+        except Exception as e:
+            logger.error(f"사용자 {user.id}에게 요약 알림 전송 실패: {e}")
+            return False
+
 
     def check_all_markets_with_all_conditions(self, hours: int = None) -> Dict[str, Any]:
-        """모든 관심 시장의 다양한 날씨 조건 확인 및 알림 전송"""
+        """모든 관심 시장의 다양한 날씨 조건 확인 및 알림 전송 (사용자별 그룹화 적용)"""
         hours = hours or self.forecast_hours
 
-        logger.info(f"향후 {hours}시간 날씨 조건 확인 및 알림 전송 시작")
+        logger.info(f"향후 {hours}시간 날씨 조건 확인 및 알림 전송 시작 (Grouping 적용)")
 
         try:
-            # 관심을 가진 사용자가 있는 활성 시장들 조회
+            # 1. 정보를 수집할 활성 시장 및 사용자 조회
             from app import app, db
 
             with app.app_context():
@@ -780,55 +845,193 @@ class WeatherAlertSystem:
 
                 logger.info(f"{len(markets_with_interest)}개 시장의 날씨 조건 확인 중...")
 
-                checked_count = 0
-                alerts_sent = 0
-                results = []
+                # 2. 시장별 날씨 확인 및 알림 대상 수집
+                # 구조: active_market_alerts = [ { 'market': m, 'info': info, 'users': [u1, u2...] } ]
+                active_market_alerts = []
+                # 구조: user_batches = { user_id: { 'user': u, 'alerts': [ {'market': m, 'weather_info': info} ] } }
+                user_batches = {}
 
+                checked_count = 0
+                
                 for market in markets_with_interest:
                     try:
-                        # 시장별 모든 날씨 조건 확인
+                        # 날씨 확인
                         weather_info = self.check_all_weather_conditions_for_market(market, hours)
                         checked_count += 1
 
                         if weather_info.get('has_alerts'):
-                            # 날씨 알림이 있는 경우 전송
-                            alert_result = self.send_weather_alert_to_users(market, weather_info)
+                            # 알림이 필요한 경우만 처리
+                            interested_users = market.get_interested_users()
+                            valid_users = []
 
-                            if alert_result.get('success'):
-                                alerts_sent += alert_result.get('sent_count', 0)
+                            # 중복 체크 (Deduplication) - 시장 레벨에서 체크
+                            # 주의: 사용자별로 그룹화해서 보내더라도, '이 시장에 대한 알림'이 최근에 나갔는지 체크는 필요함.
+                            # 하지만 여기서는 '이벤트' 자체의 중복을 막는 것이므로, 
+                            # 대표 알림 타입 하나로 체크하거나, 내부적으로직 체크해야 함.
+                            # 간단히 하기 위해, 가장 우선순위 높은 알림 타입으로 중복 체크 수행
+                            alerts = weather_info.get('alerts', {})
+                            primary_alert_type = None
+                            primary_forecast_time = None
+                            
+                            if alerts.get('high_temp'):
+                                primary_alert_type = 'high_temp'
+                                primary_forecast_time = alerts['high_temp'][0].get('time_str')
+                            elif alerts.get('low_temp'):
+                                primary_alert_type = 'low_temp'
+                                primary_forecast_time = alerts['low_temp'][0].get('time_str')
+                            elif alerts.get('strong_wind'):
+                                primary_alert_type = 'strong_wind'
+                                primary_forecast_time = alerts['strong_wind'][0].get('time_str')
+                            elif alerts.get('snow'):
+                                primary_alert_type = 'snow'
+                                primary_forecast_time = alerts['snow'][0].get('time_str')
+                            elif alerts.get('rain'):
+                                primary_alert_type = 'rain'
+                                primary_forecast_time = alerts['rain'][0].get('time_str')
 
-                            results.append({
-                                'market': market.name,
-                                'has_alerts': True,
-                                'alert_types': list(weather_info.get('alerts', {}).keys()),
-                                'alert_result': alert_result
-                            })
-                        else:
-                            results.append({
-                                'market': market.name,
-                                'has_alerts': False,
-                                'message': '주의할 날씨 조건 없음'
+                            if primary_alert_type and self._is_duplicate_alert(market.id, primary_alert_type, primary_forecast_time):
+                                logger.info(f"시장 {market.name} 중복 알림으로 스킵")
+                                continue
+
+                            # 유효한 사용자 수집 및 배치 구성
+                            for user in interested_users:
+                                if user.can_receive_fcm() and not user.is_in_do_not_disturb_time():
+                                    valid_users.append(user)
+                                    
+                                    if user.id not in user_batches:
+                                        user_batches[user.id] = {'user': user, 'alerts': []}
+                                    
+                                    user_batches[user.id]['alerts'].append({
+                                        'market': market,
+                                        'weather_info': weather_info
+                                    })
+                            
+                            # 시장별 알림 정보 저장 (나중에 로그 기록용)
+                            active_market_alerts.append({
+                                'market': market,
+                                'weather_info': weather_info,
+                                'users': valid_users,
+                                'success_count': 0, # 전송 후 업데이트
+                                'failure_count': 0,
+                                'primary_alert_type': primary_alert_type, # 로그용
+                                'primary_forecast_time': primary_forecast_time,
+                                'alerts_data': alerts
                             })
 
                     except Exception as e:
                         logger.error(f"시장 {market.name} 처리 중 오류: {e}")
-                        results.append({
-                            'market': market.name,
-                            'error': str(e)
-                        })
 
-                logger.info(f"날씨 조건 확인 완료: {checked_count}개 시장 확인, {alerts_sent}건 알림 전송")
+                # 3. 사용자별 알림 전송 (Grouping)
+                logger.info(f"사용자 {len(user_batches)}명에게 알림 전송 시작")
+                
+                total_alerts_sent = 0
+                
+                for user_id, batch in user_batches.items():
+                    user = batch['user']
+                    user_alerts = batch['alerts']
+                    
+                    if not user_alerts:
+                        continue
+                        
+                    is_summary = len(user_alerts) >= 3
+                    
+                    if is_summary:
+                        # 요약 알림 전송
+                        success = self.send_summary_alert_to_user(user, user_alerts)
+                        if success:
+                            total_alerts_sent += 1
+                        
+                        # 각 시장별 성공 카운트 업데이트
+                        for item in user_alerts:
+                            # 해당 시장의 active_market_alerts 항목 찾기
+                            # 성능을 위해 매번 찾는건 비효율적일 수 있으나, 시장 수가 적으므로 허용
+                            for m_alert in active_market_alerts:
+                                if m_alert['market'].id == item['market'].id:
+                                    if success:
+                                        m_alert['success_count'] += 1
+                                    else:
+                                        m_alert['failure_count'] += 1
+                                    break
+                    else:
+                        # 개별 알림 전송
+                        for item in user_alerts:
+                            success = self.send_individual_alert_to_user(user, item['market'], item['weather_info'])
+                            if success:
+                                total_alerts_sent += 1
+                                
+                            # 시장별 성공 카운트 업데이트
+                            for m_alert in active_market_alerts:
+                                if m_alert['market'].id == item['market'].id:
+                                    if success:
+                                        m_alert['success_count'] += 1
+                                    else:
+                                        m_alert['failure_count'] += 1
+                                    break
+
+                # 4. 로그 기록 (시장별로)
+                for m_alert in active_market_alerts:
+                    try:
+                        market = m_alert['market']
+                        # 성공한 건수가 있거나 실패한 건수가 있을 때만 기록 (대상 사용자가 없으면 스킵될 수 있음)
+                        if m_alert['success_count'] > 0 or m_alert['failure_count'] > 0:
+                            # 상세 데이터 추출
+                            alerts = m_alert['alerts_data']
+                            
+                            # 로그 데이터 준비
+                            temperature = None
+                            rain_probability = None
+                            wind_speed = None
+                            precipitation_type = None
+                            
+                            if alerts.get('high_temp'): temperature = alerts['high_temp'][0].get('temperature')
+                            elif alerts.get('low_temp'): temperature = alerts['low_temp'][0].get('temperature')
+                            
+                            if alerts.get('rain'): 
+                                rain_probability = alerts['rain'][0].get('pop')
+                                precipitation_type = alerts['rain'][0].get('description')
+                                
+                            if alerts.get('strong_wind'): wind_speed = alerts['strong_wind'][0].get('wind_speed')
+                            if alerts.get('snow'): precipitation_type = 'snow'
+
+                            # 알림 제목/본문은 대표값으로 (요약 알림으로 나갔을 수도 있지만, 로그에는 원본 이벤트 기록)
+                            title, body = self._create_weather_alert_message(market.name, alerts, m_alert['weather_info']['checked_hours'])
+
+                            alarm_log = MarketAlarmLog(
+                                market_id=market.id,
+                                alert_type=m_alert['primary_alert_type'] or 'unknown',
+                                alert_title=title,
+                                alert_body=body,
+                                total_users=len(m_alert['users']),
+                                success_count=m_alert['success_count'],
+                                failure_count=m_alert['failure_count'],
+                                weather_data=alerts,
+                                temperature=temperature,
+                                rain_probability=rain_probability,
+                                wind_speed=wind_speed,
+                                precipitation_type=precipitation_type,
+                                forecast_time=m_alert['primary_forecast_time'],
+                                checked_hours=m_alert['weather_info'].get('checked_hours')
+                            )
+                            db.session.add(alarm_log)
+                    except Exception as e:
+                        logger.error(f"로그 기록 중 오류 (시장: {m_alert['market'].name}): {e}")
+
+                db.session.commit()
+                
+                logger.info(f"알림 처리 완료: {checked_count}개 시장 확인, {total_alerts_sent}건 메시지 전송 (요약 포함)")
 
                 return {
                     'success': True,
-                    'message': f'{checked_count}개 시장 확인 완료, {alerts_sent}건 알림 전송',
+                    'message': f'{checked_count}개 시장 확인 완료, 총 {total_alerts_sent}건 메시지 전송',
                     'checked_markets': checked_count,
-                    'alerts_sent': alerts_sent,
-                    'results': results
+                    'alerts_sent': total_alerts_sent,
+                    'results': [] # 상세 결과는 생략 (구조가 복잡해짐)
                 }
 
         except Exception as e:
             logger.error(f"전체 시장 날씨 조건 확인 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
                 'error': str(e),
