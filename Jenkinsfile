@@ -29,14 +29,19 @@ node {
     }
 
     stage('Kubernetes deploy') {
-        sshagent(credentials: ['ssh-deploy-key']) {
-            // Copy the k8s manifest to the server
-            sh "scp -o StrictHostKeyChecking=no k8s/mwn_backend.yaml junhp1234@203.250.35.87:/services/mwn/mwn_backend.yaml"
-            
-            // Apply the manifest and restart deployment
-            sh "ssh -o StrictHostKeyChecking=no junhp1234@203.250.35.87 'kubectl apply -f /services/mwn/mwn_backend.yaml -n mwn'"
-            sh "ssh -o StrictHostKeyChecking=no junhp1234@203.250.35.87 'kubectl rollout restart deployment/mwn-backend -n mwn'"
-        }
+        def remote = [:]
+        remote.name = 'deploy-server'
+        remote.host = '203.250.35.87'
+        remote.user = 'junhp1234'
+        remote.password = 'gPdls0348!'
+        remote.allowAnyHosts = true
+
+        // Copy the k8s manifest to the server
+        sshPut remote: remote, from: 'k8s/mwn_backend.yaml', into: '/services/mwn/'
+
+        // Apply the manifest and restart deployment
+        sshCommand remote: remote, command: 'kubectl apply -f /services/mwn/mwn_backend.yaml -n mwn'
+        sshCommand remote: remote, command: 'kubectl rollout restart deployment/mwn-backend -n mwn'
     }
 
     stage('Complete') {
