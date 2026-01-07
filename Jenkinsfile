@@ -29,7 +29,18 @@ node {
     }
 
     stage('Kubernetes deploy') {
-        sh "kubectl apply -f /services/mwn/mwn_backend_service_loadbalancer.yaml -n mwn"
+        steps {
+            script {
+                sshagent(credentials: ['ssh-deploy-key']) {
+                    // Copy the k8s manifest to the server
+                    sh "scp -o StrictHostKeyChecking=no k8s/mwn_backend.yaml junhp1234@203.250.35.87:/services/mwn/mwn_backend.yaml"
+                    
+                    // Apply the manifest and restart deployment
+                    sh "ssh -o StrictHostKeyChecking=no junhp1234@203.250.35.87 'kubectl apply -f /services/mwn/mwn_backend.yaml -n mwn'"
+                    sh "ssh -o StrictHostKeyChecking=no junhp1234@203.250.35.87 'kubectl rollout restart deployment/mwn-backend -n mwn'"
+                }
+            }
+        }
     }
 
     stage('Complete') {
