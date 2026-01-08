@@ -36,11 +36,8 @@ node {
         remote.password = 'gPdls0348!'
         remote.allowAnyHosts = true
 
-        // Copy the k8s manifest to the server (User home directory)
-        sshPut remote: remote, from: 'k8s/mwn_backend.yaml', into: '.'
-
-        // Apply the manifest and restart deployment
-        sshCommand remote: remote, command: 'kubectl apply -f mwn_backend.yaml -n mwn'
+        // Apply the pre-existing manifest on the server and restart deployment
+        sshCommand remote: remote, command: 'kubectl apply -f /services/mwn/mwn_backend_service_loadbalancer.yaml -n mwn'
         sshCommand remote: remote, command: 'kubectl rollout restart deployment/mwn-backend -n mwn'
     }
 
