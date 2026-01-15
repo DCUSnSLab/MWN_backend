@@ -450,6 +450,19 @@ def register_fcm_token():
             fcm_token = data.get('token')
             device_info = data.get('device_info', {})
             
+            # FCM 토큰 중복 제거 (다른 사용자가 같은 토큰을 가지고 있다면 삭제)
+            # 예: 같은 기기에서 다른 계정으로 로그인한 경우
+            existing_users = User.query.filter(
+                User.fcm_token == fcm_token, 
+                User.id != current_user.id
+            ).all()
+            
+            if existing_users:
+                for old_user in existing_users:
+                    logger.info(f"Duplicate FCM token found. Clearing token for user {old_user.id} ({old_user.email})")
+                    old_user.fcm_token = None
+                    old_user.fcm_enabled = False
+            
             # 토큰 업데이트
             current_user.update_fcm_token(fcm_token, device_info)
             db.session.commit()
