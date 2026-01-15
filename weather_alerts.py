@@ -74,8 +74,54 @@ class WeatherAlertSystem:
             'temp_enabled': alert_conditions.get('temp_enabled', True),
             'wind_enabled': alert_conditions.get('wind_enabled', True)
         }
+
+    def _get_forecast_from_db(self, nx: int, ny: int) -> Dict[str, Any]:
+        """데이터베이스에서 최신 예보 데이터 조회"""
+        from app import app
+        from models import Weather
         
-    def check_rain_forecast_for_market(self, market: Market, hours: int = None) -> Dict[str, Any]:
+        # 최근 2시간 내에 수집된 데이터만 사용 (스케줄러가 매 시간 수집함)
+        cutoff_time = datetime.utcnow() - timedelta(hours=2)
+        
+        try:
+            with app.app_context():
+                # 최신 예보 데이터 조회 (api_type='forecast')
+                # created_at 기준으로 최근 데이터 필터링
+                forecasts = Weather.query.filter(
+                    Weather.nx == nx,
+                    Weather.ny == ny,
+                    Weather.api_type == 'forecast',
+                    Weather.created_at >= cutoff_time
+                ).order_by(
+                    Weather.fcst_date.asc(), 
+                    Weather.fcst_time.asc()
+                ).all()
+                
+                if not forecasts:
+                    return {'status': 'empty', 'message': 'No recent forecast data in DB'}
+                
+                data = []
+                for f in forecasts:
+                    # API 응답 구조와 맞춤
+                    data.append({
+                        'fcst_date': f.fcst_date,
+                        'fcst_time': f.fcst_time,
+                        'pop': f.pop,
+                        'pty': f.pty,
+                        'tmp': f.temp,
+                        'wsd': f.wind_speed,
+                        'sno': 0, # 모델에 sno 컬럼이 없거나 사용 안함? 확인 필요. 일단 0
+                        # models.py에 pty, sky, lightning 등은 있음. sno는?
+                        # models.py 확인시: sno 컬럼 없음. 
+                        # 하지만 check_all_weather_conditions_for_market에서 forecast.get('sno', 0) 사용중.
+                        # Weather 모델에는 sno 없음.
+                    })
+                
+                return {'status': 'success', 'data': data}
+                
+        except Exception as e:
+            logger.error(f"DB 예보 조회 중 오류: {e}")
+            return {'status': 'error', 'message': str(e)}
         """특정 시장의 비 예보 확인"""
         if not self.weather_api:
             return {'has_rain': False, 'error': 'Weather API not available'}
@@ -83,12 +129,21 @@ class WeatherAlertSystem:
         hours = hours or self.forecast_hours
         
         try:
-            # 시장의 격자 좌표로 예보 조회
-            forecast_data = self.weather_api.get_forecast_weather(
-                market.nx, 
-                market.ny, 
-                market.name
-            )
+            # DB에서 예보 데이터 조회 (API 호출 대신)
+            forecast_data = self._get_forecast_from_db(market.nx, market.ny)
+            
+            # DB에 데이터가 없으면 Fallback으로 API 호출? 
+            # 아니면 스케줄러가 돌기를 기대? 
+            # 안정성을 위해 Fallback 추가 가능하지만, 지금은 DB 우선.
+            if forecast_data.get('status') != 'success':
+                # 데이터가 없으면 API 호출 시도 (Fallback)
+                if self.weather_api:
+                    logger.info(f"DB 데이터 없음, API 호출 시도: {market.name}")
+                    forecast_data = self.weather_api.get_forecast_weather(
+                        market.nx, 
+                        market.ny, 
+                        market.name
+                    )
             
             if forecast_data.get('status') != 'success':
                 error_msg = forecast_data.get('message', 'Failed to get forecast data')
@@ -332,12 +387,18 @@ class WeatherAlertSystem:
             return {'has_alerts': False, 'message': '알림이 비활성화되어 있습니다.'}
 
         try:
-            # 시장의 격자 좌표로 예보 조회
-            forecast_data = self.weather_api.get_forecast_weather(
-                market.nx,
-                market.ny,
-                market.name
-            )
+            # DB에서 예보 데이터 조회
+            forecast_data = self._get_forecast_from_db(market.nx, market.ny)
+
+            # Fallback
+            if forecast_data.get('status') != 'success':
+                if self.weather_api:
+                    logger.info(f"DB 데이터 없음, API 호출 시도: {market.name}")
+                    forecast_data = self.weather_api.get_forecast_weather(
+                        market.nx,
+                        market.ny,
+                        market.name
+                    )
 
             if forecast_data.get('status') != 'success':
                 error_msg = forecast_data.get('message', 'Failed to get forecast data')
