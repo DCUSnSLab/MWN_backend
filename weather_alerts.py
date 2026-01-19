@@ -876,6 +876,39 @@ class WeatherAlertSystem:
             return False
 
 
+
+    def _is_duplicate_alert(self, market_id: int, alert_type: str, forecast_time: str) -> bool:
+        """중복 알림 체크 (Cool-down 및 동일 예보 시간 확인)"""
+        try:
+            from models import MarketAlarmLog
+            from datetime import datetime, timedelta
+            
+            # 최근 알림 조회
+            last_log = MarketAlarmLog.query.filter_by(
+                market_id=market_id,
+                alert_type=alert_type
+            ).order_by(MarketAlarmLog.created_at.desc()).first()
+            
+            if not last_log:
+                return False
+                
+            # 1. Cool-down 체크 (6시간)
+            cool_down_hours = 6
+            elapsed = datetime.utcnow() - last_log.created_at
+            if elapsed < timedelta(hours=cool_down_hours):
+                return True
+                
+            # 2. 동일 예보 시간 체크 (같은 기상 이벤트인지)
+            if last_log.forecast_time == forecast_time:
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"중복 알림 체크 중 오류: {e}")
+            return False
+
+
     def check_all_markets_with_all_conditions(self, hours: int = None) -> Dict[str, Any]:
         """모든 관심 시장의 다양한 날씨 조건 확인 및 알림 전송 (사용자별 그룹화 적용)"""
         hours = hours or self.forecast_hours
