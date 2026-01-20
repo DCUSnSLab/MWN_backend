@@ -122,6 +122,8 @@ class WeatherAlertSystem:
         except Exception as e:
             logger.error(f"DB 예보 조회 중 오류: {e}")
             return {'status': 'error', 'message': str(e)}
+
+    def check_rain_forecast_for_market(self, market: Market, hours: int = None) -> Dict[str, Any]:
         """특정 시장의 비 예보 확인"""
         if not self.weather_api:
             return {'has_rain': False, 'error': 'Weather API not available'}
