@@ -850,7 +850,37 @@ class WeatherAlertSystem:
             else:
                 markets_str = f"{market_names[0]}, {market_names[1]} 외 {count-2}곳"
                 
-            body = f"{markets_str}에 비, 폭염 등 주의할 날씨가 예상됩니다. 앱에서 상세 내용을 확인하세요."
+            # 실제 알림 종류 수집
+            unique_types = set()
+            for item in alerts_list:
+                for a_type in item['weather_info'].get('alerts', {}).keys():
+                    unique_types.add(a_type)
+            
+            # 한글 변환
+            type_names = []
+            type_map = {
+                'rain': '비',
+                'snow': '눈',
+                'high_temp': '폭염',
+                'low_temp': '한파',
+                'strong_wind': '강풍'
+            }
+            
+            for t in unique_types:
+                if t in type_map:
+                    type_names.append(type_map[t])
+            
+            # 우선순위 정렬? (비/눈 -> 특보) 또는 가나다순? 일단 발견 순서대로 해도 무방하나 정렬하면 깔끔함.
+            # 임의 정렬: 비, 눈, 폭염, 한파, 강풍 순
+            sort_order = ['비', '눈', '폭염', '한파', '강풍']
+            type_names.sort(key=lambda x: sort_order.index(x) if x in sort_order else 99)
+            
+            if not type_names:
+                weather_str = "기상 특보"
+            else:
+                weather_str = ", ".join(type_names)
+
+            body = f"{markets_str}에 {weather_str} 등 주의할 날씨가 예상됩니다. 앱에서 상세 내용을 확인하세요."
 
             # 데이터 페이로드 생성 (간소화)
             import json
