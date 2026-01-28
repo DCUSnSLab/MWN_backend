@@ -744,6 +744,40 @@ def admin_send_fcm():
     
     return _admin_send_fcm()
 
+@app.route('/api/admin/logs/alerts', methods=['GET'])
+def get_admin_alert_logs():
+    """관리자용 알림 전송 이력 조회"""
+    from models import MarketAlarmLog, Market
+    from auth_utils import admin_required
+    
+    @admin_required
+    def _get_logs(current_user):
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        market_id = request.args.get('market_id', type=int)
+        
+        query = MarketAlarmLog.query
+        
+        # 필터링
+        if market_id:
+            query = query.filter_by(market_id=market_id)
+            
+        # 정렬 (최신순)
+        query = query.order_by(MarketAlarmLog.created_at.desc())
+        
+        # 페이징
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        return jsonify({
+            'logs': [log.to_dict() for log in pagination.items],
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'current_page': page,
+            'has_next': pagination.has_next
+        })
+        
+    return _get_logs()
+
 # 기존 사용자 생성 API는 관리자용으로 변경
 @app.route('/api/admin/users', methods=['POST'])
 def create_user_admin():
