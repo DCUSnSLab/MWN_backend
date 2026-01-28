@@ -778,6 +778,53 @@ def get_admin_alert_logs():
         
     return _get_logs()
 
+@app.route('/api/user/logs/alerts', methods=['GET'])
+def get_user_alert_logs():
+    """사용자용 알림 전송 이력 조회 (관심 시장만)"""
+    from models import MarketAlarmLog, UserMarketInterest
+    from auth_utils import login_required
+    
+    @login_required
+    def _get_user_logs(current_user):
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        
+        # 사용자가 관심 등록한 시장 ID 목록 조회
+        interested_market_ids = db.session.query(UserMarketInterest.market_id).filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
+        
+        market_ids = [m[0] for m in interested_market_ids]
+        
+        if not market_ids:
+            return jsonify({
+                'logs': [],
+                'total': 0,
+                'pages': 0,
+                'current_page': page,
+                'has_next': False,
+                'message': '등록된 관심 시장이 없습니다.'
+            })
+            
+        # 해당 시장들의 알림 로그 조회
+        query = MarketAlarmLog.query.filter(
+            MarketAlarmLog.market_id.in_(market_ids)
+        ).order_by(MarketAlarmLog.created_at.desc())
+        
+        # 페이징
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        return jsonify({
+            'logs': [log.to_dict() for log in pagination.items],
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'current_page': page,
+            'has_next': pagination.has_next
+        })
+        
+    return _get_user_logs()
+
 # 기존 사용자 생성 API는 관리자용으로 변경
 @app.route('/api/admin/users', methods=['POST'])
 def create_user_admin():
