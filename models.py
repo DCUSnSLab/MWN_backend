@@ -620,3 +620,40 @@ class PasswordVerificationAttempt(db.Model):
             'success': self.success,
             'ip_address': self.ip_address
         }
+
+class MarketReport(db.Model):
+    """신고 접수 (이미지 포함)"""
+    __tablename__ = 'market_reports'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), nullable=False)
+    
+    # 신고 내용
+    report_type = db.Column(db.String(50), nullable=False)  # drainage, fire, odor, other
+    description = db.Column(db.Text)
+    image_path = db.Column(db.String(255))  # 서버에 저장된 이미지 파일 경로
+    
+    # 메타데이터
+    status = db.Column(db.String(20), default='pending')  # pending, resolved
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime)
+    
+    # 관계
+    user = db.relationship('User', backref=db.backref('reports', lazy=True))
+    market = db.relationship('Market', backref=db.backref('reports', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user_name': self.user.name if self.user else "Unknown",
+            'market_id': self.market_id,
+            'market_name': self.market.name if self.market else "Unknown",
+            'report_type': self.report_type,
+            'description': self.description,
+            'image_path': self.image_path,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None
+        }

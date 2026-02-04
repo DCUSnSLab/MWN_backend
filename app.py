@@ -39,6 +39,11 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_recycle': 300,
 }
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max limit
+
+# Ensure upload directory exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # URL 스키마 처리 (LoadBalancer 환경)
 app.config['PREFERRED_URL_SCHEME'] = os.environ.get('PREFERRED_URL_SCHEME', 'http')
@@ -58,6 +63,69 @@ admin = init_admin(app, db)
 @app.route('/health')
 def health_check():
     return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    """업로드된 파일 서빙"""
+    from flask import send_from_directory
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/api/reports', methods=['POST'])
+def submit_report():
+    """신고 접수 (이미지 포함)"""
+    from models import MarketReport, Market
+    from auth_utils import login_required
+    from werkzeug.utils import secure_filename
+    import uuid
+    
+    @login_required
+    def _submit_report(current_user):
+        # 1. Validate form data
+        market_id = request.form.get('market_id')
+        report_type = request.form.get('report_type')
+        description = request.form.get('description')
+        
+        if not market_id or not report_type:
+            return jsonify({'error': '필수 정보가 누락되었습니다.'}), 400
+            
+        # 2. Check market existence
+        market = Market.query.get(market_id)
+        if not market:
+            return jsonify({'error': '유효하지 않은 시장입니다.'}), 404
+            
+        # 3. Handle Image Upload
+        image_path = None
+        if 'image' in request.files:
+            file = request.files['image']
+            if file.filename != '':
+                # Generate unique filename
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
+                if ext not in ['jpg', 'jpeg', 'png', 'gif']:
+                    return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
+                    
+                filename = f"{current_user.id}_{uuid.uuid4().hex}.{ext}"
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(file_path)
+                image_path = f"/uploads/{filename}"
+        
+        # 4. Create database record
+        report = MarketReport(
+            user_id=current_user.id,
+            market_id=market_id,
+            report_type=report_type,
+            description=description,
+            image_path=image_path
+        )
+        
+        db.session.add(report)
+        db.session.commit()
+        
+        return jsonify({
+            'message': '신고가 접수되었습니다.',
+            'report': report.to_dict()
+        }), 201
+        
+    return _submit_report()
 
 @app.route('/api/users', methods=['GET'])
 def get_users():
@@ -1279,9 +1347,11 @@ def get_current_weather():
 
         if market:
             # 시장이 있으면 해당 시장의 최신 날씨 데이터 조회
+            # 주의: Weather 테이블은 convert_to_grid 결과(nx, ny)를 그대로 저장하고,
+            # Market 테이블은 +1 보정된 값을 저장하고 있음
             weather = Weather.query.filter_by(
-                nx=market.nx,
-                ny=market.ny,
+                nx=nx,
+                ny=ny,
                 api_type='current'
             ).order_by(Weather.created_at.desc()).first()
 
