@@ -1320,35 +1320,24 @@ def handle_damage_status():
 @app.route('/api/weather/current', methods=['POST'])
 def get_current_weather():
     """현재 날씨 정보 조회 (시장의 최신 데이터 가져오기)"""
-    from weather_api import convert_to_grid
     from models import Weather, Market
 
     data = request.get_json()
 
     # 필수 파라미터 검증
-    if not data or 'latitude' not in data or 'longitude' not in data:
+    if not data or 'nx' not in data or 'ny' not in data:
         logger.warning(f"현재 날씨 조회 실패: 필수 파라미터 누락 (data={data})")
-        return jsonify({'error': '위도(latitude)와 경도(longitude)가 필요합니다.'}), 400
+        return jsonify({'error': '격자좌표 nx와 ny가 필요합니다.'}), 400
 
     try:
-        lat = float(data['latitude'])
-        lon = float(data['longitude'])
-        location_name = data.get('location_name', '')
-
-        # 위경도를 격자좌표로 변환
-        nx, ny = convert_to_grid(lat, lon)
+        nx = int(data['nx'])
+        ny = int(data['ny'])
 
         # 해당 격자좌표를 가진 시장 찾기
-        # 이런 미친 코드.. 왜 이런 일이 발생했을까요
-        # 앱 쪽에서 시장 이름이 아닌 시장의 위도, 경도를 전달받는데(대체 왜?)
-        # 전달받은 위경도를 기상청 API에 호출하기 위한 격자 좌표로 변경해서 호출을 진행합니다
-        # 이 과정에서 약간의 오차가 발생해서 아래와 같이 변환 결과에 1을 더해줘야 정상적인 값이 나오는걸 확인했습니다`1
-        market = Market.query.filter_by(nx=nx + 1, ny=ny + 1, is_active=True).first()
+        market = Market.query.filter_by(nx=nx, ny=ny, is_active=True).first()
 
         if market:
             # 시장이 있으면 해당 시장의 최신 날씨 데이터 조회
-            # 주의: Weather 테이블은 convert_to_grid 결과(nx, ny)를 그대로 저장하고,
-            # Market 테이블은 +1 보정된 값을 저장하고 있음
             weather = Weather.query.filter_by(
                 nx=nx,
                 ny=ny,
@@ -1380,7 +1369,7 @@ def get_current_weather():
             }), 404
 
     except ValueError:
-        return jsonify({'error': '위도와 경도는 숫자여야 합니다.'}), 400
+        return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
     except Exception as e:
         logger.error(f"현재 날씨 조회 오류: {e}")
         return jsonify({'error': f'서버 오류: {str(e)}'}), 500
@@ -1388,22 +1377,17 @@ def get_current_weather():
 @app.route('/api/weather/forecast', methods=['POST'])
 def get_forecast_weather():
     """날씨 예보 정보 조회 (데이터베이스에서 최신 데이터 가져오기)"""
-    from weather_api import convert_to_grid
     from models import Weather
 
     data = request.get_json()
 
     # 필수 파라미터 검증
-    if 'latitude' not in data or 'longitude' not in data:
-        return jsonify({'error': '위도(latitude)와 경도(longitude)가 필요합니다.'}), 400
+    if not data or 'nx' not in data or 'ny' not in data:
+        return jsonify({'error': '격자좌표 nx와 ny가 필요합니다.'}), 400
 
     try:
-        lat = float(data['latitude'])
-        lon = float(data['longitude'])
-        location_name = data.get('location_name', '')
-
-        # 위경도를 격자좌표로 변환
-        nx, ny = convert_to_grid(lat, lon)
+        nx = int(data['nx'])
+        ny = int(data['ny'])
 
         # 데이터베이스에서 해당 격자 좌표의 최신 예보 데이터 조회
         # 예보는 여러 시간대의 데이터가 있으므로 최신 base_date/base_time 기준으로 모두 가져옴
@@ -1438,7 +1422,7 @@ def get_forecast_weather():
             'status': 'success',
             'message': '데이터베이스에서 최신 예보 데이터를 가져왔습니다.',
             'data': [weather.to_dict() for weather in latest_forecasts],
-            'location_name': location_name or (forecasts[0].location_name if forecasts else ''),
+            'location_name': forecasts[0].location_name if forecasts else '',
             'nx': nx,
             'ny': ny,
             'base_date': latest_base_date,
@@ -1448,7 +1432,7 @@ def get_forecast_weather():
         return jsonify(result)
 
     except ValueError:
-        return jsonify({'error': '위도와 경도는 숫자여야 합니다.'}), 400
+        return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
     except Exception as e:
         logger.error(f"예보 날씨 조회 오류: {e}")
         return jsonify({'error': f'서버 오류: {str(e)}'}), 500
