@@ -429,6 +429,12 @@ class Weather(db.Model):
     nx = db.Column(db.Integer, nullable=False)  # 격자 X 좌표
     ny = db.Column(db.Integer, nullable=False)  # 격자 Y 좌표
     
+    # 인덱스 추가 (조회 성능 최적화)
+    __table_args__ = (
+        db.Index('idx_weather_lookup', 'nx', 'ny', 'base_date', 'base_time', 'api_type'),
+        db.Index('idx_weather_created_at', 'created_at'),
+    )
+    
     # 기상 요소들
     temp = db.Column(db.Float)          # T1H: 기온(℃)
     humidity = db.Column(db.Float)      # REH: 습도(%)

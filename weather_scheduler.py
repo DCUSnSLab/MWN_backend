@@ -262,7 +262,7 @@ class WeatherScheduler:
         # 날씨 데이터 수집 작업 등록 (매 시간 15분, 45분)
         self.scheduler.add_job(
             func=self.collect_market_weather_data,
-            trigger=CronTrigger(minute='15,45'),  # 매 시간 15분, 45분에 실행
+            trigger=CronTrigger(minute='45'),  # 매 시간 45분에 실행 (기상청 API는 매시 40분경 갱신됨)
             id='weather_collection_job',
             name='시장별 날씨 데이터 수집 (15분, 45분)',
             replace_existing=True
