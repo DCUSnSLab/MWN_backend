@@ -6,41 +6,38 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:debug
-    command: ['sleep']
-    args: ['99d']
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+  - name: docker
+    image: docker:24.0.6  # Docker 클라이언트가 포함된 이미지
+    command: ['cat']
+    tty: true
     volumeMounts:
-      - name: kaniko-config
-        mountPath: /kaniko/.docker/
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
   volumes:
-    - name: kaniko-config
-      emptyDir: {}
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
 """
         }
     }
 
     stages {
-        stage('Build and Push') {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Build & Push image') {
             steps {
-                container('kaniko') {
-                    // 기존 Jenkins에 등록된 'harbor' Credentials(ID/PW 방식)를 사용
-                    withCredentials([usernamePassword(credentialsId: 'harbor', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                        script {
-                            // 1. Kaniko가 인식할 수 있는 auth 정보(base64)를 생성하여 config.json에 기록
-                            def auth = "${USER}:${PASS}".bytes.encodeBase64().toString()
-                            sh """
-                            echo '{"auths": {"harbor.cu.ac.kr": {"auth": "${auth}"}}}' > /kaniko/.docker/config.json
-                            """
-                            
-                            // 2. 빌드 및 푸시 진행
-                            sh """
-                            /kaniko/executor \
-                              --context=${WORKSPACE} \
-                              --dockerfile=${WORKSPACE}/Dockerfile \
-                              --destination=harbor.cu.ac.kr/mwn/backend:${env.BUILD_NUMBER} \
-                              --destination=harbor.cu.ac.kr/mwn/backend:latest
-                            """
+                // 'docker' 컨테이너 환경에서 실행
+                container('docker') {
+                    script {
+                        // harbor 인증 정보를 사용 (Jenkins Credentials ID: 'harbor')
+                        docker.withRegistry("https://harbor.cu.ac.kr", "harbor") {
+                            def app = docker.build("harbor.cu.ac.kr/mwn/backend:${env.BUILD_NUMBER}")
+                            app.push("latest")
+                            app.push("${env.BUILD_NUMBER}")
                         }
                     }
                 }
@@ -50,7 +47,6 @@ spec:
         stage('Kubernetes deploy') {
             steps {
                 script {
-                    // SSH Steps 플러그인 필요
                     def remote = [:]
                     remote.name = 'deploy-server'
                     remote.host = '203.250.35.87'
