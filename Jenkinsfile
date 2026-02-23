@@ -29,7 +29,7 @@ spec:
                 container('docker') {
                     script {
                         // 'harbor-auth'라는 ID의 Credentials를 사용합니다.
-                        docker.withRegistry("https://harbor.cu.ac.kr", "harbor-auth") {
+                        docker.withRegistry("https://harbor.cu.ac.kr", "harbor") {
                             def app = docker.build("harbor.cu.ac.kr/mwn/backend:${env.BUILD_NUMBER}")
                             app.push("latest")
                             app.push("${env.BUILD_NUMBER}")
