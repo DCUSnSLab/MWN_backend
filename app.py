@@ -127,6 +127,25 @@ def submit_report():
         
     return _submit_report()
 
+@app.route('/api/reports', methods=['GET'])
+def get_reports():
+    """신고 내역 조회 (관리자용)"""
+    from models import MarketReport, Market
+    from auth_utils import admin_required
+    
+    @admin_required
+    def _get_reports(current_user):
+        reports = MarketReport.query.order_by(MarketReport.created_at.desc()).all()
+        result = []
+        for report in reports:
+            market = Market.query.get(report.market_id)
+            report_data = report.to_dict()
+            report_data['market_name'] = market.name if market else '알 수 없음'
+            result.append(report_data)
+        return jsonify(result)
+    
+    return _get_reports()
+
 @app.route('/api/users', methods=['GET'])
 def get_users():
     """사용자 목록 조회 (관리자용)"""
