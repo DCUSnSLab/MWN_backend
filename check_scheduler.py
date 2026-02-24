@@ -32,7 +32,7 @@ def check_scheduler_status():
                 print("해결 방법:")
                 print("1. Flask 앱을 재시작하세요 (스케줄러가 자동으로 시작됩니다)")
                 print("2. 또는 다음 API를 호출하세요:")
-                print("   curl -X POST http://localhost:8002/api/scheduler/start")
+                print("   curl -X POST http://localhost:5000/api/scheduler/start")
                 return False
 
             # 2. 등록된 작업 목록
@@ -122,9 +122,9 @@ def check_scheduler_status():
             print("\n[6] 수동 실행 테스트")
             print("-" * 60)
             print("스케줄러를 기다리지 않고 즉시 날씨 데이터를 수집하려면:")
-            print("  curl -X POST http://localhost:8002/api/scheduler/collect")
+            print("  curl -X POST http://localhost:5000/api/scheduler/collect")
             print("\n스케줄러 상태 API:")
-            print("  curl http://localhost:8002/api/scheduler/status")
+            print("  curl http://localhost:5000/api/scheduler/status")
 
             print("\n" + "=" * 60)
             print("스케줄러 상태 확인 완료!")

@@ -304,8 +304,8 @@ with app.app_context():
 # 헬스체크
 echo "🏥 Running health check..."
 
-# 환경변수에서 포트 가져오기 (기본값: 80)
-HEALTH_CHECK_PORT=${PORT:-80}
+# 환경변수에서 포트 가져오기 (기본값: 5000)
+HEALTH_CHECK_PORT=${PORT:-5000}
 
 python -c "
 import os
@@ -315,7 +315,7 @@ import time
 import threading
 
 # 환경변수에서 포트 가져오기
-port = int(os.environ.get('PORT', 80))
+port = int(os.environ.get('PORT', 5000))
 
 def run_app():
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)

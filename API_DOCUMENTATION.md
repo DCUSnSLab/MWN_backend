@@ -1,8 +1,8 @@
 # 날씨 알림 백엔드 API 문서
 
 ## 🌐 서버 정보
-- **베이스 URL**: `http://localhost:8002`
-- **포트**: 8002
+- **베이스 URL**: `http://localhost:5000`
+- **포트**: 5000
 - **응답 형식**: JSON
 
 ---
@@ -785,74 +785,74 @@ GET /db-viewer/api/damage    # 피해상태 데이터
 ### 1. cURL로 API 호출
 ```bash
 # 헬스 체크
-curl http://localhost:8002/health
+curl http://localhost:5000/health
 
 # 회원가입
-curl -X POST http://localhost:8002/api/auth/register \
+curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"name": "김철수", "email": "kim@example.com", "password": "SecurePass123!"}'
 
 # 로그인
-curl -X POST http://localhost:8002/api/auth/login \
+curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "kim@example.com", "password": "SecurePass123!"}'
 
 # 인증된 프로필 조회 (토큰 필요)
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  http://localhost:8002/api/auth/me
+  http://localhost:5000/api/auth/me
 
 # 모든 시장 조회
-curl http://localhost:8002/api/markets
+curl http://localhost:5000/api/markets
 
 # 현재 날씨 조회
-curl -X POST http://localhost:8002/api/weather/current \
+curl -X POST http://localhost:5000/api/weather/current \
   -H "Content-Type: application/json" \
   -d '{"latitude": 37.5665, "longitude": 126.9780, "location_name": "서울"}'
 
 # 스케줄러 시작
-curl -X POST http://localhost:8002/api/scheduler/start
+curl -X POST http://localhost:5000/api/scheduler/start
 
 # 날씨 통계 조회
-curl http://localhost:8002/api/scheduler/stats
+curl http://localhost:5000/api/scheduler/stats
 
 # FCM 토큰 등록 (인증 필요)
-curl -X POST http://localhost:8002/api/fcm/register \
+curl -X POST http://localhost:5000/api/fcm/register \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{"token": "FCM_TOKEN", "device_info": {"platform": "web"}}'
 
 # FCM 테스트 알림 전송 (인증 필요)
-curl -X POST http://localhost:8002/api/fcm/test \
+curl -X POST http://localhost:5000/api/fcm/test \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
 # 관리자용 전체 FCM 알림 전송
-curl -X POST http://localhost:8002/api/admin/fcm/send \
+curl -X POST http://localhost:5000/api/admin/fcm/send \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"title": "기상 특보", "body": "호우 경보 발령"}'
 
 # 시장 검색
-curl "http://localhost:8002/api/markets/search?q=동대문&limit=10"
+curl "http://localhost:5000/api/markets/search?q=동대문&limit=10"
 
 # 관심목록 조회 (인증 필요)
 curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  http://localhost:8002/api/watchlist
+  http://localhost:5000/api/watchlist
 
 # 관심목록에 시장 추가 (인증 필요)
-curl -X POST http://localhost:8002/api/watchlist \
+curl -X POST http://localhost:5000/api/watchlist \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{"market_id": 1}'
 
 # 관심목록에서 시장 제거 (인증 필요)
-curl -X DELETE http://localhost:8002/api/watchlist/1 \
+curl -X DELETE http://localhost:5000/api/watchlist/1 \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
 # 시장의 비 예보 확인
-curl "http://localhost:8002/api/markets/1/rain-forecast?hours=24"
+curl "http://localhost:5000/api/markets/1/rain-forecast?hours=24"
 
 # 관리자용 수동 비 예보 알림 확인 (관리자 권한 필요)
-curl -X POST http://localhost:8002/api/admin/rain-alerts/check \
+curl -X POST http://localhost:5000/api/admin/rain-alerts/check \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"hours": 24}'
@@ -861,7 +861,7 @@ curl -X POST http://localhost:8002/api/admin/rain-alerts/check \
 ### 2. JavaScript/Fetch로 호출
 ```javascript
 // 회원가입
-const registerResponse = await fetch('http://localhost:8002/api/auth/register', {
+const registerResponse = await fetch('http://localhost:5000/api/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -874,7 +874,7 @@ const registerData = await registerResponse.json();
 const accessToken = registerData.tokens.access_token;
 
 // 로그인
-const loginResponse = await fetch('http://localhost:8002/api/auth/login', {
+const loginResponse = await fetch('http://localhost:5000/api/auth/login', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -885,18 +885,18 @@ const loginResponse = await fetch('http://localhost:8002/api/auth/login', {
 const loginData = await loginResponse.json();
 
 // 인증된 프로필 조회
-const profileResponse = await fetch('http://localhost:8002/api/auth/me', {
+const profileResponse = await fetch('http://localhost:5000/api/auth/me', {
   headers: { 'Authorization': `Bearer ${accessToken}` }
 });
 const profile = await profileResponse.json();
 
 // 시장 목록 조회
-fetch('http://localhost:8002/api/markets')
+fetch('http://localhost:5000/api/markets')
   .then(response => response.json())
   .then(data => console.log(data));
 
 // 현재 날씨 조회
-fetch('http://localhost:8002/api/weather/current', {
+fetch('http://localhost:5000/api/weather/current', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -909,7 +909,7 @@ fetch('http://localhost:8002/api/weather/current', {
 .then(data => console.log(data));
 
 // FCM 토큰 등록
-fetch('http://localhost:8002/api/fcm/register', {
+fetch('http://localhost:5000/api/fcm/register', {
   method: 'POST',
   headers: { 
     'Content-Type': 'application/json',
@@ -925,7 +925,7 @@ fetch('http://localhost:8002/api/fcm/register', {
 .then(data => console.log(data));
 
 // FCM 테스트 알림
-fetch('http://localhost:8002/api/fcm/test', {
+fetch('http://localhost:5000/api/fcm/test', {
   method: 'POST',
   headers: { 'Authorization': `Bearer ${accessToken}` }
 })
@@ -933,19 +933,19 @@ fetch('http://localhost:8002/api/fcm/test', {
 .then(data => console.log(data));
 
 // 시장 검색
-fetch('http://localhost:8002/api/markets/search?q=동대문&limit=10')
+fetch('http://localhost:5000/api/markets/search?q=동대문&limit=10')
   .then(response => response.json())
   .then(data => console.log(data));
 
 // 관심목록 조회
-fetch('http://localhost:8002/api/watchlist', {
+fetch('http://localhost:5000/api/watchlist', {
   headers: { 'Authorization': `Bearer ${accessToken}` }
 })
 .then(response => response.json())
 .then(data => console.log(data));
 
 // 관심목록에 시장 추가
-fetch('http://localhost:8002/api/watchlist', {
+fetch('http://localhost:5000/api/watchlist', {
   method: 'POST',
   headers: { 
     'Content-Type': 'application/json',
@@ -957,7 +957,7 @@ fetch('http://localhost:8002/api/watchlist', {
 .then(data => console.log(data));
 
 // 시장의 비 예보 확인
-fetch('http://localhost:8002/api/markets/1/rain-forecast?hours=24')
+fetch('http://localhost:5000/api/markets/1/rain-forecast?hours=24')
   .then(response => response.json())
   .then(data => console.log(data));
 ```
@@ -972,7 +972,7 @@ register_data = {
     "email": "kim@example.com",
     "password": "SecurePass123!"
 }
-register_response = requests.post('http://localhost:8002/api/auth/register', 
+register_response = requests.post('http://localhost:5000/api/auth/register', 
                                  json=register_data)
 register_result = register_response.json()
 access_token = register_result['tokens']['access_token']
@@ -982,18 +982,18 @@ login_data = {
     "email": "kim@example.com",
     "password": "SecurePass123!"
 }
-login_response = requests.post('http://localhost:8002/api/auth/login', 
+login_response = requests.post('http://localhost:5000/api/auth/login', 
                               json=login_data)
 login_result = login_response.json()
 
 # 인증된 프로필 조회
 headers = {"Authorization": f"Bearer {access_token}"}
-profile_response = requests.get('http://localhost:8002/api/auth/me', 
+profile_response = requests.get('http://localhost:5000/api/auth/me', 
                                headers=headers)
 profile = profile_response.json()
 
 # 시장 목록 조회
-response = requests.get('http://localhost:8002/api/markets')
+response = requests.get('http://localhost:5000/api/markets')
 markets = response.json()
 
 # 현재 날씨 조회
@@ -1002,7 +1002,7 @@ weather_data = {
     "longitude": 126.9780,
     "location_name": "서울시청"
 }
-response = requests.post('http://localhost:8002/api/weather/current', 
+response = requests.post('http://localhost:5000/api/weather/current', 
                         json=weather_data)
 weather = response.json()
 
@@ -1012,12 +1012,12 @@ fcm_data = {
     "device_info": {"platform": "python", "version": "3.9"},
     "subscribe_topics": ["weather_alerts"]
 }
-fcm_response = requests.post('http://localhost:8002/api/fcm/register',
+fcm_response = requests.post('http://localhost:5000/api/fcm/register',
                             json=fcm_data, headers=headers)
 fcm_result = fcm_response.json()
 
 # FCM 테스트 알림
-test_response = requests.post('http://localhost:8002/api/fcm/test',
+test_response = requests.post('http://localhost:5000/api/fcm/test',
                              headers=headers)
 test_result = test_response.json()
 ```
@@ -1071,5 +1071,5 @@ test_result = test_response.json()
 ## 🚀 서버 실행
 ```bash
 python app.py
-# 서버 주소: http://localhost:8002
+# 서버 주소: http://localhost:5000
 ```

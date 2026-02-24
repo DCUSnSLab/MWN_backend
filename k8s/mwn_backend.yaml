@@ -20,7 +20,7 @@ spec:
         image: harbor.cu.ac.kr/mwn/backend:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 8002
+        - containerPort: 5000
         envFrom:
         - secretRef:
             name: mwn-secret
@@ -46,5 +46,5 @@ spec:
     app: mwn-backend
   ports:
     - protocol: TCP
-      port: 8002
-      targetPort: 8002
+      port: 5000
+      targetPort: 5000
