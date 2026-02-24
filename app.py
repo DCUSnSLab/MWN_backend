@@ -165,7 +165,7 @@ def register():
     from models import User
     from auth_utils import validate_email, validate_password, generate_tokens
     
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
     
     # 필수 필드 검증
     required_fields = ['name', 'email', 'password']
@@ -225,7 +225,7 @@ def login():
     from models import User
     from auth_utils import generate_tokens
     
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
     
     # 필수 필드 검증
     if not data.get('email') or not data.get('password'):
@@ -266,7 +266,7 @@ def refresh_token():
     from models import User
     from auth_utils import verify_token, generate_tokens
     
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
     refresh_token = data.get('refresh_token')
     
     if not refresh_token:
@@ -316,7 +316,7 @@ def verify_password():
 
     @login_required
     def _verify_password(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data or not data.get('password'):
             return jsonify({'error': '비밀번호를 입력해주세요.'}), 400
@@ -386,7 +386,7 @@ def update_profile():
 
     @login_required
     def _update_profile(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data:
             return jsonify({'error': '업데이트할 정보를 입력해주세요.'}), 400
@@ -527,7 +527,7 @@ def register_fcm_token():
     
     @login_required
     def _register_fcm_token(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         # 필수 필드 검증
         if not data.get('token'):
@@ -591,7 +591,7 @@ def fcm_settings():
 
         elif request.method == 'POST':
             # FCM 설정 업데이트
-            data = request.get_json()
+            data = request.get_json(silent=True, force=True) or {}
 
             try:
                 # FCM 활성화/비활성화
@@ -658,7 +658,7 @@ def update_do_not_disturb():
 
     @login_required
     def _update_do_not_disturb(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data:
             return jsonify({'error': '방해금지 설정 데이터가 필요합니다.'}), 400
@@ -761,7 +761,7 @@ def admin_send_fcm():
     
     @admin_required
     def _admin_send_fcm(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         # 필수 필드 검증
         required_fields = ['title', 'body']
@@ -921,7 +921,7 @@ def create_user_admin():
     
     @admin_required
     def _create_user_admin(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         # 필수 필드 검증
         required_fields = ['name', 'email', 'password']
@@ -995,7 +995,7 @@ def handle_markets():
         })
 
     elif request.method == 'POST':
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         market = Market(
             name=data.get('name'),
             location=data.get('location'),
@@ -1078,7 +1078,7 @@ def update_market_alert_conditions(market_id):
 
     @admin_required
     def _update_alert_conditions(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data:
             return jsonify({'error': '알림 조건 데이터가 필요합니다.'}), 400
@@ -1133,7 +1133,7 @@ def bulk_update_alert_conditions():
 
     @admin_required
     def _bulk_update_alert_conditions(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data or 'market_ids' not in data or 'conditions' not in data:
             return jsonify({'error': 'market_ids와 conditions가 필요합니다.'}), 400
@@ -1224,7 +1224,7 @@ def add_to_watchlist():
     
     @login_required
     def _add_to_watchlist(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         if not data.get('market_id'):
             return jsonify({'error': 'market_id가 필요합니다.'}), 400
@@ -1324,7 +1324,7 @@ def handle_damage_status():
         return jsonify([status.to_dict() for status in damage_statuses])
     
     elif request.method == 'POST':
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         damage_status = DamageStatus(
             market_id=data.get('market_id'),
             weather_event=data.get('weather_event'),
@@ -1341,7 +1341,7 @@ def get_current_weather():
     """현재 날씨 정보 조회 (시장의 최신 데이터 가져오기)"""
     from models import Weather, Market
 
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
 
     # 필수 파라미터 검증
     if not data or 'nx' not in data or 'ny' not in data:
@@ -1398,7 +1398,7 @@ def get_forecast_weather():
     """날씨 예보 정보 조회 (데이터베이스에서 최신 데이터 가져오기)"""
     from models import Weather
 
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
 
     # 필수 파라미터 검증
     if not data or 'nx' not in data or 'ny' not in data:
@@ -1545,7 +1545,7 @@ def manual_rain_alert_check():
     @admin_required
     def _manual_rain_alert_check(current_user):
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True, force=True) or {}
             hours = data.get('hours', 24)
             
             result = check_and_send_rain_alerts(hours)
@@ -1619,7 +1619,7 @@ def manual_weather_alert_check():
     @admin_required
     def _manual_weather_alert_check(current_user):
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True, force=True) or {}
             hours = data.get('hours', 24)
 
             result = check_and_send_all_weather_alerts(hours)
@@ -1653,7 +1653,7 @@ def test_weather_alert_to_user():
     @admin_required
     def _test_weather_alert_to_user(current_user):
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True, force=True) or {}
 
             # 필수 파라미터 확인
             if not data:
