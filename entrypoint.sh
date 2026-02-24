@@ -356,7 +356,7 @@ echo "   - Weather data collection: Every hour at :15 and :45"
 echo "   - Weather alerts (rain/heat/cold/wind): Every hour at :00"
 echo ""
 
-echo "🚀 Starting Flask application with weather scheduler..."
+echo "🚀 Starting uWSGI application with weather scheduler..."
 
-# Flask 애플리케이션 시작 (스케줄러가 자동으로 시작됨)
-exec python app.py
+# uWSGI 애플리케이션 시작 (스케줄러가 자동으로 시작됨)
+exec uwsgi --ini uwsgi.ini

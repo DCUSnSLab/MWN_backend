@@ -51,7 +51,7 @@ spec:
                         remote.password = "${SSH_PASS}"
                         remote.allowAnyHosts = true
 
-                        sshCommand remote: remote, command: "kubectl apply -f /services/mwn/mwn_backend_service_loadbalancer.yaml -n mwn"
+                        sshCommand remote: remote, command: "kubectl apply -f /services/mwn/mwn_backend_service_loadbalancer_nginx.yaml -n mwn"
                         sshCommand remote: remote, command: "kubectl rollout restart deployment/mwn-backend -n mwn"
                     }
                 }
