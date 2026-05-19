@@ -14,7 +14,15 @@ from flask import request, jsonify, current_app
 from models import User
 
 # JWT 설정
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+if not JWT_SECRET_KEY:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError('JWT_SECRET_KEY environment variable is required in production')
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        'JWT_SECRET_KEY not set; falling back to insecure development value'
+    )
+    JWT_SECRET_KEY = 'dev-jwt-secret-DO-NOT-USE-IN-PROD'
 JWT_ALGORITHM = 'HS256'
 JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)  # 24시간
 JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)  # 30일

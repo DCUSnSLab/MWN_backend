@@ -89,20 +89,7 @@ with app.app_context():
 " || echo "  ℹ️  alembic_version 테이블이 없거나 이미 삭제됨"
 fi
 
-# 현재 모델과 데이터베이스 스키마 비교하여 마이그레이션 생성
-echo "  🔍 모델 변경사항 확인 중..."
-flask db migrate -m "Auto-migration on startup" 2>&1 | tee /tmp/migrate_output.log
-
-# migrate 결과 확인
-if grep -q "No changes in schema detected" /tmp/migrate_output.log; then
-    echo "  ℹ️  스키마 변경사항 없음"
-elif grep -q "Generating" /tmp/migrate_output.log; then
-    echo "  📝 새로운 마이그레이션 파일 생성됨"
-else
-    echo "  ⚠️  마이그레이션 생성 결과를 확인하세요"
-fi
-
-# 마이그레이션 적용
+# 마이그레이션 적용 (Auto-migrate는 의도된 변경만 들어가도록 CI/개발 단계에서 수행)
 echo "  🚀 마이그레이션 적용 중..."
 flask db upgrade 2>&1 | tee /tmp/upgrade_output.log
 
@@ -127,15 +114,22 @@ fi
 
 # 관리자 계정 생성
 echo "👤 Creating admin account..."
+if [ -z "${ADMIN_PASSWORD}" ]; then
+    echo "  ❌ ADMIN_PASSWORD environment variable is required (set it in the Pod spec / Secret)."
+    exit 1
+fi
+export ADMIN_EMAIL="${ADMIN_EMAIL:-snslab@gmail.com}"
+export ADMIN_NAME="${ADMIN_NAME:-시스템 관리자}"
 python -c "
+import os
 from app import app, db
 from models import User
 
 with app.app_context():
     try:
-        admin_email = 'snslab@gmail.com'
-        admin_password = 'snslab@cu'
-        admin_name = '시스템 관리자'
+        admin_email = os.environ['ADMIN_EMAIL']
+        admin_password = os.environ['ADMIN_PASSWORD']
+        admin_name = os.environ['ADMIN_NAME']
         
         # 기존 관리자 계정 확인
         existing_admin = User.query.filter_by(email=admin_email).first()

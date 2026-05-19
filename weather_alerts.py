@@ -103,6 +103,9 @@ class WeatherAlertSystem:
                 data = []
                 for f in forecasts:
                     # API 응답 구조와 맞춤
+                    # TODO: Weather 모델에 sno(적설량) 컬럼이 없어 단계 분류가 불가능.
+                    #       컬럼 추가 + 마이그레이션 + weather_api.py 수집 로직 보강 후
+                    #       이 값을 f.sno로 교체할 것.
                     data.append({
                         'fcst_date': f.fcst_date,
                         'fcst_time': f.fcst_time,
@@ -110,11 +113,7 @@ class WeatherAlertSystem:
                         'pty': f.pty,
                         'tmp': f.temp,
                         'wsd': f.wind_speed,
-                        'sno': 0, # 모델에 sno 컬럼이 없거나 사용 안함? 확인 필요. 일단 0
-                        # models.py에 pty, sky, lightning 등은 있음. sno는?
-                        # models.py 확인시: sno 컬럼 없음. 
-                        # 하지만 check_all_weather_conditions_for_market에서 forecast.get('sno', 0) 사용중.
-                        # Weather 모델에는 sno 없음.
+                        'sno': None,
                     })
                 
                 return {'status': 'success', 'data': data}
@@ -172,7 +171,7 @@ class WeatherAlertSystem:
                         pty = forecast.get('pty', '0')  # 강수형태
                         
                         # 강수확률이 임계값 이상이거나 강수형태가 있는 경우
-                        if (pop and pop >= self.thresholds['rain_probability']) or (pty and pty != '0'):
+                        if (pop and pop >= self.default_thresholds['rain_probability']) or (pty and pty != '0'):
                             rain_alerts.append({
                                 'datetime': fcst_datetime.isoformat(),
                                 'pop': pop,
@@ -454,11 +453,14 @@ class WeatherAlertSystem:
                                 })
 
                                 # 눈인 경우 별도 확인 (snow_enabled가 True일 때만)
-                                if thresholds['snow_enabled'] and pty in ['2', '3'] and sno and sno >= self.default_thresholds['snow_amount']:
+                                # NOTE: Weather 모델에 적설량(sno) 컬럼이 없어 임계값 비교가 불가능.
+                                #       강수형태가 비/눈(2) 또는 눈(3)이면 알림을 발화한다.
+                                #       정확한 적설량 기반 단계 분류는 sno 컬럼 추가 후 복구할 것.
+                                if thresholds['snow_enabled'] and pty in ['2', '3']:
                                     all_alerts['snow'].append({
                                         **alert_item,
-                                        'snow_amount': sno,
-                                        'description': f"적설량 {sno}cm 예상"
+                                        'snow_amount': sno or 0,
+                                        'description': "눈 예보" if pty == '3' else "비/눈 예보"
                                     })
 
                         # 2. 폭염 확인 (temp_enabled가 True일 때만)
@@ -746,9 +748,10 @@ class WeatherAlertSystem:
 
         if alerts.get('snow'):
             alert = alerts['snow'][0]
-            snow = alert.get('snow_amount')
+            snow = alert.get('snow_amount') or 0
 
             # 폭설 단계 결정 (적설량 기준)
+            # 적설량 데이터가 없으면(snow == 0) 강수형태(눈)만으로 발화하므로 기본 단계로 처리한다.
             if snow >= 10:
                 alert_level = "경고단계"
                 snow_desc = "폭설"
@@ -764,7 +767,12 @@ class WeatherAlertSystem:
             # 본문 생성
             time_str = alert['time_str']
 
-            body = f"""{time_str}경부터 {market_name}에 적설량 {snow}cm 이상 {snow_desc}이 예상됩니다.
+            if snow > 0:
+                forecast_line = f"{time_str}경부터 {market_name}에 적설량 {snow}cm 이상 {snow_desc}이 예상됩니다."
+            else:
+                forecast_line = f"{time_str}경부터 {market_name}에 {snow_desc}이 예상됩니다."
+
+            body = f"""{forecast_line}
 
 [조치1] 인근 가설천막 및 차양에 눈이 쌓이지 않도록 수시 점검 바랍니다.
 

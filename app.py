@@ -38,7 +38,13 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
 }
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError('SECRET_KEY environment variable is required in production')
+    logger.warning('SECRET_KEY not set; falling back to insecure development value')
+    _secret_key = 'dev-secret-key-DO-NOT-USE-IN-PROD'
+app.config['SECRET_KEY'] = _secret_key
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max limit
 
@@ -995,17 +1001,23 @@ def handle_markets():
         })
 
     elif request.method == 'POST':
-        data = request.get_json()
-        market = Market(
-            name=data.get('name'),
-            location=data.get('location'),
-            latitude=data.get('latitude'),
-            longitude=data.get('longitude'),
-            category=data.get('category')
-        )
-        db.session.add(market)
-        db.session.commit()
-        return jsonify(market.to_dict()), 201
+        from auth_utils import admin_required
+
+        @admin_required
+        def _create_market(current_user):
+            data = request.get_json(silent=True, force=True) or {}
+            market = Market(
+                name=data.get('name'),
+                location=data.get('location'),
+                latitude=data.get('latitude'),
+                longitude=data.get('longitude'),
+                category=data.get('category')
+            )
+            db.session.add(market)
+            db.session.commit()
+            return jsonify(market.to_dict()), 201
+
+        return _create_market()
 
 @app.route('/api/markets/search', methods=['GET'])
 def search_markets():
@@ -1324,137 +1336,153 @@ def handle_damage_status():
         return jsonify([status.to_dict() for status in damage_statuses])
     
     elif request.method == 'POST':
-        data = request.get_json()
-        damage_status = DamageStatus(
-            market_id=data.get('market_id'),
-            weather_event=data.get('weather_event'),
-            damage_level=data.get('damage_level'),
-            description=data.get('description'),
-            estimated_recovery_time=data.get('estimated_recovery_time')
-        )
-        db.session.add(damage_status)
-        db.session.commit()
-        return jsonify(damage_status.to_dict()), 201
+        from auth_utils import login_required
+
+        @login_required
+        def _create_damage_status(current_user):
+            data = request.get_json(silent=True, force=True) or {}
+            damage_status = DamageStatus(
+                market_id=data.get('market_id'),
+                weather_event=data.get('weather_event'),
+                damage_level=data.get('damage_level'),
+                description=data.get('description'),
+                estimated_recovery_time=data.get('estimated_recovery_time')
+            )
+            db.session.add(damage_status)
+            db.session.commit()
+            return jsonify(damage_status.to_dict()), 201
+
+        return _create_damage_status()
 
 @app.route('/api/weather/current', methods=['POST'])
 def get_current_weather():
     """현재 날씨 정보 조회 (시장의 최신 데이터 가져오기)"""
+    from auth_utils import login_required
     from models import Weather, Market
 
-    data = request.get_json()
+    @login_required
+    def _get_current_weather(current_user):
+        data = request.get_json(silent=True, force=True) or {}
 
-    # 필수 파라미터 검증
-    if not data or 'nx' not in data or 'ny' not in data:
-        logger.warning(f"현재 날씨 조회 실패: 필수 파라미터 누락 (data={data})")
-        return jsonify({'error': '격자좌표 nx와 ny가 필요합니다.'}), 400
+        # 필수 파라미터 검증
+        if 'nx' not in data or 'ny' not in data:
+            logger.warning(f"현재 날씨 조회 실패: 필수 파라미터 누락 (data={data})")
+            return jsonify({'error': '격자좌표 nx와 ny가 필요합니다.'}), 400
 
-    try:
-        nx = int(data['nx'])
-        ny = int(data['ny'])
+        try:
+            nx = int(data['nx'])
+            ny = int(data['ny'])
 
-        # 해당 격자좌표를 가진 시장 찾기
-        market = Market.query.filter_by(nx=nx, ny=ny, is_active=True).first()
+            # 해당 격자좌표를 가진 시장 찾기
+            market = Market.query.filter_by(nx=nx, ny=ny, is_active=True).first()
 
-        if market:
-            # 시장이 있으면 해당 시장의 최신 날씨 데이터 조회
-            weather = Weather.query.filter_by(
-                nx=nx,
-                ny=ny,
-                api_type='current'
-            ).order_by(Weather.created_at.desc()).first()
+            if market:
+                # 시장이 있으면 해당 시장의 최신 날씨 데이터 조회
+                weather = Weather.query.filter_by(
+                    nx=nx,
+                    ny=ny,
+                    api_type='current'
+                ).order_by(Weather.created_at.desc()).first()
 
-            if weather:
-                result = {
-                    'status': 'success',
-                    'message': f'{market.name}의 최신 날씨 데이터를 가져왔습니다.',
-                    'data': weather.to_dict(),
-                    'location_name': market.name,
-                    'nx': market.nx,
-                    'ny': market.ny
-                }
-                return jsonify(result)
+                if weather:
+                    result = {
+                        'status': 'success',
+                        'message': f'{market.name}의 최신 날씨 데이터를 가져왔습니다.',
+                        'data': weather.to_dict(),
+                        'location_name': market.name,
+                        'nx': market.nx,
+                        'ny': market.ny
+                    }
+                    return jsonify(result)
+                else:
+                    logger.warning(f"현재 날씨 조회 실패: {market.name}의 날씨 데이터 없음")
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'{market.name}의 날씨 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았습니다.'
+                    }), 404
             else:
-                logger.warning(f"현재 날씨 조회 실패: {market.name}의 날씨 데이터 없음")
+                # 시장이 없으면 격자좌표로만 조회
+                logger.warning(f"시장 없음: 격자좌표({nx}, {ny})에 해당하는 활성 시장이 없습니다.")
                 return jsonify({
                     'status': 'error',
-                    'message': f'{market.name}의 날씨 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았습니다.'
+                    'message': f'해당 위치의 시장 정보가 없습니다. (격자좌표: {nx}, {ny})'
                 }), 404
-        else:
-            # 시장이 없으면 격자좌표로만 조회
-            logger.warning(f"시장 없음: 격자좌표({nx}, {ny})에 해당하는 활성 시장이 없습니다.")
-            return jsonify({
-                'status': 'error',
-                'message': f'해당 위치의 시장 정보가 없습니다. (격자좌표: {nx}, {ny})'
-            }), 404
 
-    except ValueError:
-        return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
-    except Exception as e:
-        logger.error(f"현재 날씨 조회 오류: {e}")
-        return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+        except ValueError:
+            return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
+        except Exception as e:
+            logger.error(f"현재 날씨 조회 오류: {e}")
+            return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+
+    return _get_current_weather()
 
 @app.route('/api/weather/forecast', methods=['POST'])
 def get_forecast_weather():
     """날씨 예보 정보 조회 (데이터베이스에서 최신 데이터 가져오기)"""
+    from auth_utils import login_required
     from models import Weather
 
-    data = request.get_json()
+    @login_required
+    def _get_forecast_weather(current_user):
+        data = request.get_json(silent=True, force=True) or {}
 
-    # 필수 파라미터 검증
-    if not data or 'nx' not in data or 'ny' not in data:
-        return jsonify({'error': '격자좌표 nx와 ny가 필요합니다.'}), 400
+        # 필수 파라미터 검증
+        if 'nx' not in data or 'ny' not in data:
+            return jsonify({'error': '격자좌표 nx와 ny가 필요합니다.'}), 400
 
-    try:
-        nx = int(data['nx'])
-        ny = int(data['ny'])
+        try:
+            nx = int(data['nx'])
+            ny = int(data['ny'])
 
-        # 데이터베이스에서 해당 격자 좌표의 최신 예보 데이터 조회
-        # 예보는 여러 시간대의 데이터가 있으므로 최신 base_date/base_time 기준으로 모두 가져옴
-        forecasts = Weather.query.filter_by(
-            nx=nx,
-            ny=ny,
-            api_type='forecast'
-        ).order_by(
-            Weather.base_date.desc(),
-            Weather.base_time.desc(),
-            Weather.fcst_date.asc(),
-            Weather.fcst_time.asc()
-        ).limit(100).all()
+            # 데이터베이스에서 해당 격자 좌표의 최신 예보 데이터 조회
+            # 예보는 여러 시간대의 데이터가 있으므로 최신 base_date/base_time 기준으로 모두 가져옴
+            forecasts = Weather.query.filter_by(
+                nx=nx,
+                ny=ny,
+                api_type='forecast'
+            ).order_by(
+                Weather.base_date.desc(),
+                Weather.base_time.desc(),
+                Weather.fcst_date.asc(),
+                Weather.fcst_time.asc()
+            ).limit(100).all()
 
-        if not forecasts:
-            return jsonify({
-                'status': 'error',
-                'message': f'해당 위치({nx}, {ny})의 예보 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았거나 해당 지역이 활성 시장 목록에 없습니다.'
-            }), 404
+            if not forecasts:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'해당 위치({nx}, {ny})의 예보 데이터가 없습니다. 스케줄러가 아직 데이터를 수집하지 않았거나 해당 지역이 활성 시장 목록에 없습니다.'
+                }), 404
 
-        # 가장 최신 base_date/base_time을 가진 예보들만 필터링
-        latest_base_date = forecasts[0].base_date
-        latest_base_time = forecasts[0].base_time
+            # 가장 최신 base_date/base_time을 가진 예보들만 필터링
+            latest_base_date = forecasts[0].base_date
+            latest_base_time = forecasts[0].base_time
 
-        latest_forecasts = [
-            f for f in forecasts
-            if f.base_date == latest_base_date and f.base_time == latest_base_time
-        ]
+            latest_forecasts = [
+                f for f in forecasts
+                if f.base_date == latest_base_date and f.base_time == latest_base_time
+            ]
 
-        # 성공 응답 구성
-        result = {
-            'status': 'success',
-            'message': '데이터베이스에서 최신 예보 데이터를 가져왔습니다.',
-            'data': [weather.to_dict() for weather in latest_forecasts],
-            'location_name': forecasts[0].location_name if forecasts else '',
-            'nx': nx,
-            'ny': ny,
-            'base_date': latest_base_date,
-            'base_time': latest_base_time
-        }
+            # 성공 응답 구성
+            result = {
+                'status': 'success',
+                'message': '데이터베이스에서 최신 예보 데이터를 가져왔습니다.',
+                'data': [weather.to_dict() for weather in latest_forecasts],
+                'location_name': forecasts[0].location_name if forecasts else '',
+                'nx': nx,
+                'ny': ny,
+                'base_date': latest_base_date,
+                'base_time': latest_base_time
+            }
 
-        return jsonify(result)
+            return jsonify(result)
 
-    except ValueError:
-        return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
-    except Exception as e:
-        logger.error(f"예보 날씨 조회 오류: {e}")
-        return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+        except ValueError:
+            return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
+        except Exception as e:
+            logger.error(f"예보 날씨 조회 오류: {e}")
+            return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+
+    return _get_forecast_weather()
 
 @app.route('/api/weather', methods=['GET'])
 def get_weather_history():
@@ -1489,52 +1517,82 @@ def get_weather_history():
 @app.route('/api/scheduler/start', methods=['POST'])
 def start_scheduler():
     """날씨 스케줄러 시작"""
-    try:
-        from weather_scheduler import start_weather_scheduler
-        start_weather_scheduler()
-        return jsonify({'status': 'success', 'message': '날씨 스케줄러가 시작되었습니다.'})
-    except Exception as e:
-        return jsonify({'error': f'스케줄러 시작 실패: {str(e)}'}), 500
+    from auth_utils import admin_required
+
+    @admin_required
+    def _start_scheduler(current_user):
+        try:
+            from weather_scheduler import start_weather_scheduler
+            start_weather_scheduler()
+            return jsonify({'status': 'success', 'message': '날씨 스케줄러가 시작되었습니다.'})
+        except Exception as e:
+            return jsonify({'error': f'스케줄러 시작 실패: {str(e)}'}), 500
+
+    return _start_scheduler()
 
 @app.route('/api/scheduler/stop', methods=['POST'])
 def stop_scheduler():
     """날씨 스케줄러 정지"""
-    try:
-        from weather_scheduler import stop_weather_scheduler
-        stop_weather_scheduler()
-        return jsonify({'status': 'success', 'message': '날씨 스케줄러가 정지되었습니다.'})
-    except Exception as e:
-        return jsonify({'error': f'스케줄러 정지 실패: {str(e)}'}), 500
+    from auth_utils import admin_required
+
+    @admin_required
+    def _stop_scheduler(current_user):
+        try:
+            from weather_scheduler import stop_weather_scheduler
+            stop_weather_scheduler()
+            return jsonify({'status': 'success', 'message': '날씨 스케줄러가 정지되었습니다.'})
+        except Exception as e:
+            return jsonify({'error': f'스케줄러 정지 실패: {str(e)}'}), 500
+
+    return _stop_scheduler()
 
 @app.route('/api/scheduler/status', methods=['GET'])
 def get_scheduler_status():
     """스케줄러 상태 조회"""
-    try:
-        from weather_scheduler import get_scheduler_status
-        status = get_scheduler_status()
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({'error': f'상태 조회 실패: {str(e)}'}), 500
+    from auth_utils import login_required
+
+    @login_required
+    def _get_scheduler_status(current_user):
+        try:
+            from weather_scheduler import get_scheduler_status
+            status = get_scheduler_status()
+            return jsonify(status)
+        except Exception as e:
+            return jsonify({'error': f'상태 조회 실패: {str(e)}'}), 500
+
+    return _get_scheduler_status()
 
 @app.route('/api/scheduler/stats', methods=['GET'])
 def get_weather_statistics():
     """날씨 데이터 통계 조회"""
-    try:
-        from weather_scheduler import get_weather_stats
-        stats = get_weather_stats()
-        return jsonify(stats)
-    except Exception as e:
-        return jsonify({'error': f'통계 조회 실패: {str(e)}'}), 500
+    from auth_utils import login_required
+
+    @login_required
+    def _get_weather_statistics(current_user):
+        try:
+            from weather_scheduler import get_weather_stats
+            stats = get_weather_stats()
+            return jsonify(stats)
+        except Exception as e:
+            return jsonify({'error': f'통계 조회 실패: {str(e)}'}), 500
+
+    return _get_weather_statistics()
 
 @app.route('/api/scheduler/collect', methods=['POST'])
 def manual_weather_collection():
     """수동 날씨 데이터 수집"""
-    try:
-        from weather_scheduler import weather_scheduler
-        weather_scheduler.collect_market_weather_data()
-        return jsonify({'status': 'success', 'message': '날씨 데이터 수집이 완료되었습니다.'})
-    except Exception as e:
-        return jsonify({'error': f'수동 수집 실패: {str(e)}'}), 500
+    from auth_utils import admin_required
+
+    @admin_required
+    def _manual_weather_collection(current_user):
+        try:
+            from weather_scheduler import weather_scheduler
+            weather_scheduler.collect_market_weather_data()
+            return jsonify({'status': 'success', 'message': '날씨 데이터 수집이 완료되었습니다.'})
+        except Exception as e:
+            return jsonify({'error': f'수동 수집 실패: {str(e)}'}), 500
+
+    return _manual_weather_collection()
 
 @app.route('/api/admin/rain-alerts/check', methods=['POST'])
 def manual_rain_alert_check():
@@ -2183,15 +2241,36 @@ def account_deletion_page():
             )
 
 # 웹 데이터베이스 뷰어 라우트들 추가
+def _require_admin_session():
+    """db-viewer 페이지/엔드포인트용 세션 기반 관리자 권한 체크.
+
+    Flask-Admin과 동일한 세션 키(`admin_user_id`)를 재사용한다.
+    """
+    from flask import session
+    from models import User
+    admin_id = session.get('admin_user_id')
+    if not admin_id:
+        return None
+    user = User.query.get(admin_id)
+    if not user or not user.is_admin():
+        return None
+    return user
+
+
 @app.route('/db-viewer')
 def db_viewer():
-    """데이터베이스 뷰어 메인 페이지"""
+    """데이터베이스 뷰어 메인 페이지 (관리자 전용)"""
+    from flask import redirect, url_for
+    if not _require_admin_session():
+        return redirect(url_for('admin.login_view'))
     from web_db_viewer import render_template_string, HTML_TEMPLATE
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/db-viewer/api/stats')
 def api_stats():
-    """데이터베이스 통계 API"""
+    """데이터베이스 통계 API (관리자 전용)"""
+    if not _require_admin_session():
+        return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
     from models import User, Market, DamageStatus, Weather
     stats = {
         'users': User.query.count(),
@@ -2202,36 +2281,42 @@ def api_stats():
         'damage_statuses': DamageStatus.query.count(),
         'active_markets': Market.query.filter_by(is_active=True).count(),
         'markets_with_coordinates': Market.query.filter(
-            Market.latitude.isnot(None), 
+            Market.latitude.isnot(None),
             Market.longitude.isnot(None)
         ).count(),
         'latest_weather_update': None
     }
-    
+
     # 최근 날씨 업데이트 시간
     latest_weather = Weather.query.order_by(Weather.created_at.desc()).first()
     if latest_weather:
         stats['latest_weather_update'] = latest_weather.created_at.isoformat()
-    
+
     return jsonify(stats)
 
 @app.route('/db-viewer/api/users')
 def api_users():
-    """사용자 데이터 API"""
+    """사용자 데이터 API (관리자 전용)"""
+    if not _require_admin_session():
+        return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
     from models import User
     users = User.query.all()
     return jsonify([user.to_dict() for user in users])
 
 @app.route('/db-viewer/api/markets')
 def api_markets():
-    """시장 데이터 API"""
+    """시장 데이터 API (관리자 전용)"""
+    if not _require_admin_session():
+        return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
     from models import Market
     markets = Market.query.all()
     return jsonify([market.to_dict() for market in markets])
 
 @app.route('/db-viewer/api/weather')
 def api_weather():
-    """날씨 데이터 API"""
+    """날씨 데이터 API (관리자 전용)"""
+    if not _require_admin_session():
+        return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
     from models import Weather
     limit = request.args.get('limit', 100, type=int)
     weather_data = Weather.query.order_by(Weather.created_at.desc()).limit(limit).all()
@@ -2239,7 +2324,9 @@ def api_weather():
 
 @app.route('/db-viewer/api/damage')
 def api_damage():
-    """피해상태 데이터 API"""
+    """피해상태 데이터 API (관리자 전용)"""
+    if not _require_admin_session():
+        return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
     from models import DamageStatus
     damages = DamageStatus.query.all()
     return jsonify([damage.to_dict() for damage in damages])

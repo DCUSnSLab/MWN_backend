@@ -451,67 +451,10 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/db-viewer')
-def db_viewer():
-    """데이터베이스 뷰어 메인 페이지"""
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/db-viewer/api/stats')
-def api_stats():
-    """데이터베이스 통계 API"""
-    with app.app_context():
-        stats = {
-            'users': User.query.count(),
-            'markets': Market.query.count(),
-            'weather_total': Weather.query.count(),
-            'weather_current': Weather.query.filter_by(api_type='current').count(),
-            'weather_forecast': Weather.query.filter_by(api_type='forecast').count(),
-            'damage_statuses': DamageStatus.query.count(),
-            'active_markets': Market.query.filter_by(is_active=True).count(),
-            'markets_with_coordinates': Market.query.filter(
-                Market.latitude.isnot(None), 
-                Market.longitude.isnot(None)
-            ).count(),
-            'latest_weather_update': None
-        }
-        
-        # 최근 날씨 업데이트 시간
-        latest_weather = Weather.query.order_by(Weather.created_at.desc()).first()
-        if latest_weather:
-            stats['latest_weather_update'] = latest_weather.created_at.isoformat()
-        
-        return jsonify(stats)
-
-@app.route('/db-viewer/api/users')
-def api_users():
-    """사용자 데이터 API"""
-    with app.app_context():
-        users = User.query.all()
-        return jsonify([user.to_dict() for user in users])
-
-@app.route('/db-viewer/api/markets')
-def api_markets():
-    """시장 데이터 API"""
-    with app.app_context():
-        markets = Market.query.all()
-        return jsonify([market.to_dict() for market in markets])
-
-@app.route('/db-viewer/api/weather')
-def api_weather():
-    """날씨 데이터 API"""
-    with app.app_context():
-        limit = request.args.get('limit', 100, type=int)
-        weather_data = Weather.query.order_by(Weather.created_at.desc()).limit(limit).all()
-        return jsonify([weather.to_dict() for weather in weather_data])
-
-@app.route('/db-viewer/api/damage')
-def api_damage():
-    """피해상태 데이터 API"""
-    with app.app_context():
-        damages = DamageStatus.query.all()
-        return jsonify([damage.to_dict() for damage in damages])
+# NOTE: /db-viewer 라우트는 app.py로 이관되었고 관리자 세션 인증이 적용되었다.
+#       이 파일은 HTML_TEMPLATE 상수만 export하는 용도로 유지한다.
+#       (과거에 모듈 레벨에서 동일 endpoint를 재등록하여 import 시 AssertionError를
+#        유발했고, 동시에 무인증 PII 노출 경로였다.)
 
 if __name__ == '__main__':
-    print("🌐 웹 데이터베이스 뷰어를 시작합니다...")
-    print("브라우저에서 http://localhost:8000/db-viewer 를 열어주세요.")
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    print("이 모듈은 직접 실행할 수 없습니다. /db-viewer 라우트는 app.py에 등록되어 있으며 관리자 로그인 후 사용하세요.")
