@@ -1,15 +1,39 @@
 import requests
 import json
 from datetime import datetime, timedelta
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# (connect timeout, read timeout) 초 단위
+_HTTP_TIMEOUT = (5, 30)
 
 class KMAWeatherAPI:
     """기상청 날씨 API 클래스"""
-    
+
     def __init__(self, service_key):
         self.service_key = service_key
         # self.base_url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0"
         self.base_url = "https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0"
-        
+        self.timeout = _HTTP_TIMEOUT
+        self.session = self._build_session()
+
+    @staticmethod
+    def _build_session():
+        """일시적 네트워크/5xx 오류에 대해 지수 백오프 재시도하는 세션 생성"""
+        session = requests.Session()
+        retry = Retry(
+            total=3,
+            connect=3,
+            read=3,
+            backoff_factor=1,
+            status_forcelist=(500, 502, 503, 504),
+            allowed_methods=frozenset(['GET']),
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        return session
+
     def get_current_weather(self, nx, ny, location_name=None):
         """
         초단기실황조회 API 호출
@@ -45,18 +69,17 @@ class KMAWeatherAPI:
         url = f"{self.base_url}/getUltraSrtNcst"
         
         try:
-            response = requests.get(url, params=params)
-            print(response.request.url)
+            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
-            
+
             data = response.json()
-            
+
             # 응답 검증
             if data['response']['header']['resultCode'] != '00':
                 raise Exception(f"API Error: {data['response']['header']['resultMsg']}")
-                
+
             items = data['response']['body']['items']['item']
-            
+
             # 데이터베이스에 저장
             weather_data = self._parse_current_weather_data(items, base_date, base_time, nx, ny, location_name)
             weather_id = self._save_weather_data(weather_data)
@@ -116,17 +139,17 @@ class KMAWeatherAPI:
         url = f"{self.base_url}/getUltraSrtFcst"
         
         try:
-            response = requests.get(url, params=params)
+            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
-            
+
             data = response.json()
-            
+
             # 응답 검증
             if data['response']['header']['resultCode'] != '00':
                 raise Exception(f"API Error: {data['response']['header']['resultMsg']}")
-                
+
             items = data['response']['body']['items']['item']
-            
+
             # 데이터베이스에 저장
             weather_forecasts = self._parse_forecast_weather_data(items, base_date, base_time, nx, ny, location_name)
             for weather_data in weather_forecasts:

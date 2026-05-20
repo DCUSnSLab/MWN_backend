@@ -26,10 +26,36 @@ class FCMService:
         if not self.available:
             logger.warning("Firebase is not available. FCM notifications will be disabled.")
     
-    def send_notification(self, 
-                         token: str, 
-                         title: str, 
-                         body: str, 
+    def _deactivate_invalid_tokens(self, tokens: List[str]) -> int:
+        """영구 무효 FCM 토큰을 DB에서 비운다.
+
+        UnregisteredError / SenderIdMismatchError가 난 토큰은 다시 살아나지 않으므로
+        User.fcm_token을 None으로 만들어 다음 발송 대상에서 제외한다.
+        fcm_enabled는 건드리지 않는다(사용자가 직접 끈 설정과 구분하기 위함).
+        """
+        cleaned = [t for t in set(tokens) if t]
+        if not cleaned:
+            return 0
+        try:
+            users = User.query.filter(User.fcm_token.in_(cleaned)).all()
+            for user in users:
+                user.fcm_token = None
+            if users:
+                db.session.commit()
+                logger.info(f"무효 FCM 토큰 {len(users)}건을 정리했습니다.")
+            return len(users)
+        except Exception as e:
+            logger.error(f"무효 FCM 토큰 정리 실패: {e}")
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return 0
+
+    def send_notification(self,
+                         token: str,
+                         title: str,
+                         body: str,
                          data: Optional[Dict] = None,
                          image_url: Optional[str] = None) -> bool:
         """
@@ -98,9 +124,11 @@ class FCMService:
             
         except messaging.UnregisteredError:
             logger.warning(f"FCM token is unregistered: {token}")
+            self._deactivate_invalid_tokens([token])
             return False
         except messaging.SenderIdMismatchError:
             logger.error(f"FCM sender ID mismatch: {token}")
+            self._deactivate_invalid_tokens([token])
             return False
         except Exception as e:
             logger.error(f"Failed to send FCM notification: {e}")
@@ -164,6 +192,7 @@ class FCMService:
             success_count = 0
             failure_count = 0
             failed_tokens = []
+            invalid_tokens = []  # 영구 무효 토큰 (DB 정리 대상)
 
             for token in tokens:
                 try:
@@ -183,22 +212,29 @@ class FCMService:
                 except messaging.UnregisteredError:
                     failure_count += 1
                     failed_tokens.append(token)
+                    invalid_tokens.append(token)
                     logger.warning(f"FCM token is unregistered: {token[:20]}...")
                 except messaging.SenderIdMismatchError:
                     failure_count += 1
                     failed_tokens.append(token)
+                    invalid_tokens.append(token)
                     logger.error(f"FCM sender ID mismatch: {token[:20]}...")
                 except Exception as e:
+                    # 네트워크 등 일시적 오류 — 토큰 자체는 유효할 수 있으므로 정리하지 않음
                     failure_count += 1
                     failed_tokens.append(token)
                     logger.warning(f"Failed to send to token {token[:20]}...: {type(e).__name__}: {e}")
+
+            # 영구 무효 토큰을 DB에서 정리
+            self._deactivate_invalid_tokens(invalid_tokens)
 
             logger.info(f"Multicast notification sent individually: {success_count} success, {failure_count} failure out of {len(tokens)} tokens")
 
             return {
                 "success_count": success_count,
                 "failure_count": failure_count,
-                "failed_tokens": failed_tokens
+                "failed_tokens": failed_tokens,
+                "invalid_tokens": invalid_tokens
             }
 
         except Exception as e:
