@@ -64,13 +64,59 @@ mwn_backend/
 - **Alerts**: 수집된 데이터를 바탕으로 각 시장의 `alert_conditions` 기준을 초과하는 경우(ex. 강수 확률 산출, 임계 온도 돌파) FCM 모듈을 호출하여 관심 등록된 사용자들에게 Push 발송.
 
 ### 3.4. 배포 환경 (`Dockerfile`, `entrypoint.sh`, `Jenkinsfile`)
-- 컨테이너 시작 시 `entrypoint.sh` 스크립트가 실행되어 **동적으로 DB 커넥션을 확인하고 `flask db migrate`, `flask db upgrade`를 수행하여 스키마를 최신 상태로 유지**합니다.
+- 컨테이너 시작 시 `entrypoint.sh` 스크립트가 실행되어 **DB 커넥션을 확인하고 `flask db upgrade`를 수행하여 스키마를 최신 상태로 유지**합니다. (자동 `flask db migrate`는 운영 환경에서 의도치 않은 스키마 변경을 유발할 수 있어 제거되었으며, 마이그레이션 파일 생성은 개발/CI 단계에서 수행합니다.)
 - `mwn_backend_service_loadbalancer.yaml` 또는 Nginx 사이드카 레이어를 통해 Kubernetes 환경에 배포됩니다.
 - 본 서버는 외부 웹서버(Nginx 등)의 프록시 뒤에서 5000번 포트로 구동됩니다. (최근 uWSGI 연동 시도가 있었으나 최종 롤백되어 기본적인 `python app.py` 컨테이너 구조를 유지하고 있습니다.)
 
 ---
 
 ## 4. 향후 작업자를 위한 체크리스트 및 가이드
-- **DB 마이그레이션**: 모델 변경 시 로컬에서 `flask db migrate -m "메시지"`를 통해 반드시 픽스 파일을 생성하고 커밋해야 컨테이너 배포 시 `entrypoint.sh`가 자동 업그레이드를 수행합니다.
+- **DB 마이그레이션**: 모델 변경 시 로컬에서 `flask db migrate -m "메시지"`를 통해 반드시 픽스 파일을 생성하고 커밋해야 컨테이너 배포 시 `entrypoint.sh`가 `flask db upgrade`로 적용합니다. (컨테이너는 더 이상 `migrate`를 자동 실행하지 않습니다.)
 - **Push Notification 테스트**: `fcm_integration/` 하위의 스크립트 및 `check_scheduler.py`를 활용해 날씨 수집 및 푸시 정상 발송 여부를 터미널에서 스탠드얼론으로 검증할 수 있습니다.
 - **API 문서 확인**: 프론트엔드 연동 관련 변동 사항은 반드시 루트의 `API_DOCUMENTATION.md`에 현행화되어야 합니다.
+
+---
+
+## 5. 필수 환경변수 (운영 배포)
+
+`FLASK_ENV=production`으로 구동 시 아래 변수가 **반드시** 설정되어야 합니다. 누락 시 앱이 시작 단계에서 `RuntimeError`로 중단되거나 컨테이너가 종료됩니다.
+
+| 환경변수 | 용도 | 비고 |
+|---|---|---|
+| `SECRET_KEY` | Flask 세션 서명 키 | 미설정 시 운영 환경에서 기동 실패 |
+| `JWT_SECRET_KEY` | JWT 토큰 서명 키 | 미설정 시 운영 환경에서 기동 실패 |
+| `ADMIN_PASSWORD` | 초기 관리자 계정 비밀번호 | `entrypoint.sh`가 강제 요구 (미설정 시 컨테이너 종료) |
+| `DATABASE_URL` | PostgreSQL 연결 문자열 | |
+| `KMA_SERVICE_KEY` | 기상청 API 인증 키 | 미설정 시 날씨 알림 기능 제한 |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | Firebase 서비스 계정 키 경로 | FCM 발송용 |
+
+선택 변수: `ADMIN_EMAIL`(기본 `snslab@gmail.com`), `ADMIN_NAME`(기본 `시스템 관리자`), `PORT`(기본 5000).
+
+---
+
+## 6. 보안/안정성 개선 이력 (2026-05)
+
+이어서 작업하는 경우 아래 변경 사항을 인지해야 합니다.
+
+### 인증 강화
+- `/db-viewer/*`: Flask-Admin 세션(`admin_user_id`) 기반 관리자 인증 적용. 과거 무인증으로 전체 사용자 PII가 노출되던 경로였습니다.
+- `/api/scheduler/{start,stop,collect}`: `admin_required`. `/api/scheduler/{status,stats}`: `login_required`.
+- `/api/weather/{current,forecast}` (POST): `login_required`.
+- `/api/markets` POST: `admin_required`, `/api/damage-status` POST: `login_required`. (각 GET은 공개 유지)
+- `web_db_viewer.py`의 라우트 정의는 제거됨 — `app.py`와 endpoint가 충돌하던 dead code였습니다. 이 모듈은 `HTML_TEMPLATE` 상수만 export합니다.
+
+### 외부 의존성 안정화
+- `weather_api.py`: KMA API 호출에 `requests.Session` + `Retry`(3회, 지수 백오프) + `timeout=(5,30)` 적용. API 키를 로그에 노출하던 디버그 `print` 제거.
+- `fcm_utils.py`: `UnregisteredError`/`SenderIdMismatchError`가 발생한 FCM 토큰을 DB에서 자동 무효화(`User.fcm_token=None`).
+
+### 알려진 버그 수정
+- `weather_alerts.py`: `self.thresholds` AttributeError 수정(legacy 비예보 경로).
+- `weather_alerts.py`: 적설량 알림이 영구 미발화하던 문제를 강수형태(`pty`) 기반으로 우회. **근본 해결은 미완** — 아래 TODO 참조.
+
+### 남은 개선 항목 (TODO)
+- **`Weather.sno`(적설량) 컬럼 부재**: 모델에 컬럼이 없어 적설량 단계 분류가 불가능. 컬럼 추가 + 마이그레이션 + `weather_api.py` 수집 로직 보강이 필요합니다. (`weather_alerts.py`의 `_get_forecast_from_db` 내 TODO 주석 참조)
+- 에러 응답에 `str(e)`(내부 스택트레이스) 노출 — 30+ 라우트.
+- `request.get_json` robust 파싱 패턴이 미적용된 라우트 다수.
+- 모델 전반의 timezone-naive `datetime` 사용.
+- `app.py`(약 2300줄), `weather_alerts.py`(약 1400줄) 모놀리식 구조 → Blueprint/책임 분리 권장.
+- `config.py`는 어디서도 import되지 않는 dead code.

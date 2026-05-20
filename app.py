@@ -66,6 +66,30 @@ admin = init_admin(app, db)
 
 # Models will be imported later to avoid circular import
 
+@app.errorhandler(404)
+def handle_not_found(e):
+    return jsonify({'error': '요청한 리소스를 찾을 수 없습니다.'}), 404
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(e):
+    return jsonify({'error': '허용되지 않은 요청 메서드입니다.'}), 405
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    """미처리 예외를 표준 응답으로 변환. 내부 메시지는 로그로만 남긴다."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return jsonify({'error': e.description}), e.code
+    logger.exception(f"처리되지 않은 예외: {e}")
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    return jsonify({'error': '서버 내부 오류가 발생했습니다.'}), 500
+
+
 @app.route('/health')
 def health_check():
     return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
@@ -171,7 +195,7 @@ def register():
     from models import User
     from auth_utils import validate_email, validate_password, generate_tokens
     
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
     
     # 필수 필드 검증
     required_fields = ['name', 'email', 'password']
@@ -223,7 +247,7 @@ def register():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'회원가입 중 오류가 발생했습니다: {str(e)}'}), 500
+        return jsonify({'error': '회원가입 중 오류가 발생했습니다'}), 500
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
@@ -231,7 +255,7 @@ def login():
     from models import User
     from auth_utils import generate_tokens
     
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
     
     # 필수 필드 검증
     if not data.get('email') or not data.get('password'):
@@ -264,7 +288,7 @@ def login():
         })
         
     except Exception as e:
-        return jsonify({'error': f'로그인 중 오류가 발생했습니다: {str(e)}'}), 500
+        return jsonify({'error': '로그인 중 오류가 발생했습니다'}), 500
 
 @app.route('/api/auth/refresh', methods=['POST'])
 def refresh_token():
@@ -272,7 +296,7 @@ def refresh_token():
     from models import User
     from auth_utils import verify_token, generate_tokens
     
-    data = request.get_json()
+    data = request.get_json(silent=True, force=True) or {}
     refresh_token = data.get('refresh_token')
     
     if not refresh_token:
@@ -322,7 +346,7 @@ def verify_password():
 
     @login_required
     def _verify_password(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data or not data.get('password'):
             return jsonify({'error': '비밀번호를 입력해주세요.'}), 400
@@ -392,7 +416,7 @@ def update_profile():
 
     @login_required
     def _update_profile(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data:
             return jsonify({'error': '업데이트할 정보를 입력해주세요.'}), 400
@@ -480,7 +504,7 @@ def update_profile():
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error updating profile for user {current_user.email}: {e}")
-            return jsonify({'error': f'프로필 업데이트 중 오류가 발생했습니다: {str(e)}'}), 500
+            return jsonify({'error': '프로필 업데이트 중 오류가 발생했습니다'}), 500
 
     return _update_profile()
 
@@ -493,7 +517,7 @@ def delete_account():
 
     @login_required
     def _delete_account(current_user):
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True, force=True) or {}
         deletion_reason = data.get('reason', 'No reason provided.')
 
         try:
@@ -520,7 +544,7 @@ def delete_account():
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error during account deletion for user {current_user.email}: {e}")
-            return jsonify({'error': f'회원 탈퇴 중 오류가 발생했습니다: {str(e)}'}), 500
+            return jsonify({'error': '회원 탈퇴 중 오류가 발생했습니다'}), 500
 
     return _delete_account()
 
@@ -533,7 +557,7 @@ def register_fcm_token():
     
     @login_required
     def _register_fcm_token(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         # 필수 필드 검증
         if not data.get('token'):
@@ -575,7 +599,7 @@ def register_fcm_token():
             
         except Exception as e:
             db.session.rollback()
-            return jsonify({'error': f'FCM 토큰 등록 실패: {str(e)}'}), 500
+            return jsonify({'error': 'FCM 토큰 등록에 실패했습니다'}), 500
     
     return _register_fcm_token()
 
@@ -597,7 +621,7 @@ def fcm_settings():
 
         elif request.method == 'POST':
             # FCM 설정 업데이트
-            data = request.get_json()
+            data = request.get_json(silent=True, force=True) or {}
 
             try:
                 # FCM 활성화/비활성화
@@ -626,7 +650,7 @@ def fcm_settings():
 
             except Exception as e:
                 db.session.rollback()
-                return jsonify({'error': f'FCM 설정 업데이트 실패: {str(e)}'}), 500
+                return jsonify({'error': 'FCM 설정 업데이트에 실패했습니다'}), 500
 
     return _fcm_settings()
 
@@ -653,7 +677,7 @@ def get_do_not_disturb():
 
         except Exception as e:
             logger.error(f"방해금지 설정 조회 실패: {e}")
-            return jsonify({'error': f'방해금지 설정 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '방해금지 설정 조회에 실패했습니다'}), 500
 
     return _get_do_not_disturb()
 
@@ -664,7 +688,7 @@ def update_do_not_disturb():
 
     @login_required
     def _update_do_not_disturb(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data:
             return jsonify({'error': '방해금지 설정 데이터가 필요합니다.'}), 400
@@ -721,7 +745,7 @@ def update_do_not_disturb():
         except Exception as e:
             db.session.rollback()
             logger.error(f"방해금지 설정 업데이트 실패: {e}")
-            return jsonify({'error': f'방해금지 설정 업데이트 실패: {str(e)}'}), 500
+            return jsonify({'error': '방해금지 설정 업데이트에 실패했습니다'}), 500
 
     return _update_do_not_disturb()
 
@@ -754,7 +778,7 @@ def test_fcm_notification():
                 return jsonify({'error': '테스트 알림 전송에 실패했습니다.'}), 500
                 
         except Exception as e:
-            return jsonify({'error': f'테스트 알림 전송 실패: {str(e)}'}), 500
+            return jsonify({'error': '테스트 알림 전송에 실패했습니다'}), 500
     
     return _test_fcm_notification()
 
@@ -767,7 +791,7 @@ def admin_send_fcm():
     
     @admin_required
     def _admin_send_fcm(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         # 필수 필드 검증
         required_fields = ['title', 'body']
@@ -833,7 +857,7 @@ def admin_send_fcm():
                 })
                 
         except Exception as e:
-            return jsonify({'error': f'알림 전송 실패: {str(e)}'}), 500
+            return jsonify({'error': '알림 전송에 실패했습니다'}), 500
     
     return _admin_send_fcm()
 
@@ -927,7 +951,7 @@ def create_user_admin():
     
     @admin_required
     def _create_user_admin(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         # 필수 필드 검증
         required_fields = ['name', 'email', 'password']
@@ -960,7 +984,7 @@ def create_user_admin():
             
         except Exception as e:
             db.session.rollback()
-            return jsonify({'error': f'사용자 생성 실패: {str(e)}'}), 500
+            return jsonify({'error': '사용자 생성에 실패했습니다'}), 500
     
     return _create_user_admin()
 
@@ -1041,7 +1065,7 @@ def search_markets():
             'markets': [market.to_dict() for market in markets]
         })
     except Exception as e:
-        return jsonify({'error': f'검색 중 오류가 발생했습니다: {str(e)}'}), 500
+        return jsonify({'error': '검색 중 오류가 발생했습니다'}), 500
 
 @app.route('/api/markets/<int:market_id>', methods=['GET'])
 def get_market_detail(market_id):
@@ -1058,7 +1082,7 @@ def get_market_detail(market_id):
             'data': market.to_dict()
         })
     except Exception as e:
-        return jsonify({'error': f'시장 조회 실패: {str(e)}'}), 500
+        return jsonify({'error': '시장 조회에 실패했습니다'}), 500
 
 @app.route('/api/markets/<int:market_id>/alert-conditions', methods=['GET'])
 def get_market_alert_conditions(market_id):
@@ -1080,7 +1104,7 @@ def get_market_alert_conditions(market_id):
         })
     except Exception as e:
         logger.error(f"알림 조건 조회 실패: {e}")
-        return jsonify({'error': f'알림 조건 조회 실패: {str(e)}'}), 500
+        return jsonify({'error': '알림 조건 조회에 실패했습니다'}), 500
 
 @app.route('/api/admin/markets/<int:market_id>/alert-conditions', methods=['PUT'])
 def update_market_alert_conditions(market_id):
@@ -1090,7 +1114,7 @@ def update_market_alert_conditions(market_id):
 
     @admin_required
     def _update_alert_conditions(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data:
             return jsonify({'error': '알림 조건 데이터가 필요합니다.'}), 400
@@ -1133,7 +1157,7 @@ def update_market_alert_conditions(market_id):
         except Exception as e:
             db.session.rollback()
             logger.error(f"알림 조건 업데이트 실패: {e}")
-            return jsonify({'error': f'알림 조건 업데이트 실패: {str(e)}'}), 500
+            return jsonify({'error': '알림 조건 업데이트에 실패했습니다'}), 500
 
     return _update_alert_conditions()
 
@@ -1145,7 +1169,7 @@ def bulk_update_alert_conditions():
 
     @admin_required
     def _bulk_update_alert_conditions(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
 
         if not data or 'market_ids' not in data or 'conditions' not in data:
             return jsonify({'error': 'market_ids와 conditions가 필요합니다.'}), 400
@@ -1201,7 +1225,7 @@ def bulk_update_alert_conditions():
         except Exception as e:
             db.session.rollback()
             logger.error(f"일괄 알림 조건 업데이트 실패: {e}")
-            return jsonify({'error': f'일괄 업데이트 실패: {str(e)}'}), 500
+            return jsonify({'error': '일괄 업데이트에 실패했습니다'}), 500
 
     return _bulk_update_alert_conditions()
 
@@ -1224,7 +1248,7 @@ def get_user_watchlist():
                 'watchlist': [interest.to_dict() for interest in interests]
             })
         except Exception as e:
-            return jsonify({'error': f'관심 목록 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '관심 목록 조회에 실패했습니다'}), 500
     
     return _get_user_watchlist()
 
@@ -1236,7 +1260,7 @@ def add_to_watchlist():
     
     @login_required
     def _add_to_watchlist(current_user):
-        data = request.get_json()
+        data = request.get_json(silent=True, force=True) or {}
         
         if not data.get('market_id'):
             return jsonify({'error': 'market_id가 필요합니다.'}), 400
@@ -1264,7 +1288,7 @@ def add_to_watchlist():
             
         except Exception as e:
             db.session.rollback()
-            return jsonify({'error': f'관심 목록 추가 실패: {str(e)}'}), 500
+            return jsonify({'error': '관심 목록 추가에 실패했습니다'}), 500
     
     return _add_to_watchlist()
 
@@ -1291,7 +1315,7 @@ def remove_from_watchlist(market_id):
             
         except Exception as e:
             db.session.rollback()
-            return jsonify({'error': f'관심 목록 제거 실패: {str(e)}'}), 500
+            return jsonify({'error': '관심 목록 제거에 실패했습니다'}), 500
     
     return _remove_from_watchlist()
 
@@ -1324,7 +1348,7 @@ def toggle_notification_for_interest(interest_id):
             
         except Exception as e:
             db.session.rollback()
-            return jsonify({'error': f'알림 설정 변경 실패: {str(e)}'}), 500
+            return jsonify({'error': '알림 설정 변경에 실패했습니다'}), 500
     
     return _toggle_notification()
 
@@ -1412,7 +1436,7 @@ def get_current_weather():
             return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
         except Exception as e:
             logger.error(f"현재 날씨 조회 오류: {e}")
-            return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+            return jsonify({'error': '서버 오류가 발생했습니다'}), 500
 
     return _get_current_weather()
 
@@ -1480,7 +1504,7 @@ def get_forecast_weather():
             return jsonify({'error': 'nx와 ny는 정수여야 합니다.'}), 400
         except Exception as e:
             logger.error(f"예보 날씨 조회 오류: {e}")
-            return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+            return jsonify({'error': '서버 오류가 발생했습니다'}), 500
 
     return _get_forecast_weather()
 
@@ -1512,7 +1536,7 @@ def get_weather_history():
         })
         
     except Exception as e:
-        return jsonify({'error': f'서버 오류: {str(e)}'}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다'}), 500
 
 @app.route('/api/scheduler/start', methods=['POST'])
 def start_scheduler():
@@ -1526,7 +1550,7 @@ def start_scheduler():
             start_weather_scheduler()
             return jsonify({'status': 'success', 'message': '날씨 스케줄러가 시작되었습니다.'})
         except Exception as e:
-            return jsonify({'error': f'스케줄러 시작 실패: {str(e)}'}), 500
+            return jsonify({'error': '스케줄러 시작에 실패했습니다'}), 500
 
     return _start_scheduler()
 
@@ -1542,7 +1566,7 @@ def stop_scheduler():
             stop_weather_scheduler()
             return jsonify({'status': 'success', 'message': '날씨 스케줄러가 정지되었습니다.'})
         except Exception as e:
-            return jsonify({'error': f'스케줄러 정지 실패: {str(e)}'}), 500
+            return jsonify({'error': '스케줄러 정지에 실패했습니다'}), 500
 
     return _stop_scheduler()
 
@@ -1558,7 +1582,7 @@ def get_scheduler_status():
             status = get_scheduler_status()
             return jsonify(status)
         except Exception as e:
-            return jsonify({'error': f'상태 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '상태 조회에 실패했습니다'}), 500
 
     return _get_scheduler_status()
 
@@ -1574,7 +1598,7 @@ def get_weather_statistics():
             stats = get_weather_stats()
             return jsonify(stats)
         except Exception as e:
-            return jsonify({'error': f'통계 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '통계 조회에 실패했습니다'}), 500
 
     return _get_weather_statistics()
 
@@ -1590,7 +1614,7 @@ def manual_weather_collection():
             weather_scheduler.collect_market_weather_data()
             return jsonify({'status': 'success', 'message': '날씨 데이터 수집이 완료되었습니다.'})
         except Exception as e:
-            return jsonify({'error': f'수동 수집 실패: {str(e)}'}), 500
+            return jsonify({'error': '수동 수집에 실패했습니다'}), 500
 
     return _manual_weather_collection()
 
@@ -1603,7 +1627,7 @@ def manual_rain_alert_check():
     @admin_required
     def _manual_rain_alert_check(current_user):
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True, force=True) or {}
             hours = data.get('hours', 24)
             
             result = check_and_send_rain_alerts(hours)
@@ -1622,7 +1646,7 @@ def manual_rain_alert_check():
                 }), 500
                 
         except Exception as e:
-            return jsonify({'error': f'비 예보 알림 확인 실패: {str(e)}'}), 500
+            return jsonify({'error': '비 예보 알림 확인에 실패했습니다'}), 500
     
     return _manual_rain_alert_check()
 
@@ -1645,7 +1669,7 @@ def get_market_rain_forecast(market_id):
         })
         
     except Exception as e:
-        return jsonify({'error': f'비 예보 확인 실패: {str(e)}'}), 500
+        return jsonify({'error': '비 예보 확인에 실패했습니다'}), 500
 
 @app.route('/api/markets/<int:market_id>/weather-conditions', methods=['GET'])
 def get_market_weather_conditions(market_id):
@@ -1666,7 +1690,7 @@ def get_market_weather_conditions(market_id):
         })
 
     except Exception as e:
-        return jsonify({'error': f'날씨 조건 확인 실패: {str(e)}'}), 500
+        return jsonify({'error': '날씨 조건 확인에 실패했습니다'}), 500
 
 @app.route('/api/admin/weather-alerts/check', methods=['POST'])
 def manual_weather_alert_check():
@@ -1677,7 +1701,7 @@ def manual_weather_alert_check():
     @admin_required
     def _manual_weather_alert_check(current_user):
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True, force=True) or {}
             hours = data.get('hours', 24)
 
             result = check_and_send_all_weather_alerts(hours)
@@ -1696,7 +1720,7 @@ def manual_weather_alert_check():
                 }), 500
 
         except Exception as e:
-            return jsonify({'error': f'날씨 알림 확인 실패: {str(e)}'}), 500
+            return jsonify({'error': '날씨 알림 확인에 실패했습니다'}), 500
 
     return _manual_weather_alert_check()
 
@@ -1711,7 +1735,7 @@ def test_weather_alert_to_user():
     @admin_required
     def _test_weather_alert_to_user(current_user):
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True, force=True) or {}
 
             # 필수 파라미터 확인
             if not data:
@@ -1884,7 +1908,7 @@ def test_weather_alert_to_user():
             logger.error(f"테스트 알림 전송 실패: {e}")
             import traceback
             traceback.print_exc()
-            return jsonify({'error': f'테스트 알림 전송 실패: {str(e)}'}), 500
+            return jsonify({'error': '테스트 알림 전송에 실패했습니다'}), 500
 
     return _test_weather_alert_to_user()
 
@@ -1917,7 +1941,7 @@ def test_weather_summary_alert():
 
         except Exception as e:
             logger.error(f"날씨 요약 알림 테스트 실패: {e}")
-            return jsonify({'error': f'날씨 요약 알림 테스트 실패: {str(e)}'}), 500
+            return jsonify({'error': '날씨 요약 알림 테스트에 실패했습니다'}), 500
 
     return _test_weather_summary_alert()
 
@@ -2011,7 +2035,7 @@ def get_alarm_logs():
 
         except Exception as e:
             logger.error(f"알림 이력 조회 실패: {e}")
-            return jsonify({'error': f'알림 이력 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '알림 이력 조회에 실패했습니다'}), 500
 
     return _get_alarm_logs()
 
@@ -2067,7 +2091,7 @@ def get_alarm_log_detail(log_id):
 
         except Exception as e:
             logger.error(f"알림 이력 상세 조회 실패: {e}")
-            return jsonify({'error': f'알림 이력 상세 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '알림 이력 상세 조회에 실패했습니다'}), 500
 
     return _get_alarm_log_detail()
 
@@ -2147,7 +2171,7 @@ def get_market_alarm_logs(market_id):
 
         except Exception as e:
             logger.error(f"시장 알림 이력 조회 실패: {e}")
-            return jsonify({'error': f'시장 알림 이력 조회 실패: {str(e)}'}), 500
+            return jsonify({'error': '시장 알림 이력 조회에 실패했습니다'}), 500
 
     return _get_market_alarm_logs()
 
