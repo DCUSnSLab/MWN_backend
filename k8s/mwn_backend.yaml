@@ -1,3 +1,12 @@
+# MWN Backend Deployment
+#
+# 주의: 현재 CI(Jenkinsfile)는 배포 시 deploy-server의
+#       /services/mwn/mwn_backend_service_loadbalancer.yaml 을 적용합니다.
+#       이 파일이 실제 배포에 반영되려면 해당 서버 파일을 이 내용으로 교체하거나
+#       Jenkins 파이프라인이 이 파일을 apply 하도록 변경해야 합니다.
+#
+# 사전 조건: 'mwn-secret' Secret이 먼저 생성되어 있어야 합니다.
+#            (k8s/mwn-secret.example.yaml 참고)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,36 +24,131 @@ spec:
       labels:
         app: mwn-backend
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: d2-k8s
       containers:
       - name: mwn-backend
         image: harbor.cu.ac.kr/mwn/backend:latest
         imagePullPolicy: Always
+        command:
+        - /bin/sh
+        - /app/entrypoint.sh
         ports:
-        - containerPort: 5000
-        envFrom:
-        - secretRef:
-            name: mwn-secret
+        - containerPort: 80
+        env:
+        - name: FLASK_APP
+          value: app.py
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        # production 으로 설정해야 SECRET_KEY / JWT_SECRET_KEY 누락 시
+        # 앱이 안전하게 기동을 거부합니다.
+        - name: FLASK_ENV
+          value: production
+        - name: FIREBASE_SERVICE_ACCOUNT_KEY
+          value: /app/instance/serviceAccountKey.json
+        - name: TZ
+          value: Asia/Seoul
+        # --- 민감 정보는 Secret 에서 주입 ---
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: mwn-secret
+              key: DATABASE_URL
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mwn-secret
+              key: SECRET_KEY
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mwn-secret
+              key: JWT_SECRET_KEY
+        # entrypoint.sh 는 ADMIN_PASSWORD 가 없으면 컨테이너를 종료합니다.
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mwn-secret
+              key: ADMIN_PASSWORD
+        - name: KMA_SERVICE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mwn-secret
+              key: KMA_SERVICE_KEY
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         volumeMounts:
-        - name: log-volume
-          mountPath: /app/logs
-        - name: instance-volume
+        - name: instance-vol
           mountPath: /app/instance
+        - name: image-vol
+          mountPath: /app/uploads
+        - name: firebase-sa
+          mountPath: /app/instance/serviceAccountKey_key.json
+          subPath: serviceAccountKey_key.json
+          readOnly: true
+      - name: postgresql
+        image: postgres:15-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: mwn_db
+        - name: POSTGRES_USER
+          value: mwn_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mwn-secret
+              key: POSTGRES_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: TZ
+          value: Asia/Seoul
+        - name: PGTZ
+          value: Asia/Seoul
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
       volumes:
-      - name: log-volume
-        emptyDir: {}
-      - name: instance-volume
-        emptyDir: {}
+      - name: instance-vol
+        persistentVolumeClaim:
+          claimName: mwn-backend-instance-pvc
+      - name: image-vol
+        persistentVolumeClaim:
+          claimName: mwn-backend-image-pvc
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: mwn-postgres-pvc
+      - name: firebase-sa
+        secret:
+          secretName: firebase-secret
+          defaultMode: 256
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mwn-backend-service
+  name: mwn-backend-internal
   namespace: mwn
+  labels:
+    app: mwn-backend
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: mwn-backend
   ports:
     - protocol: TCP
-      port: 5000
-      targetPort: 5000
+      port: 80
+      targetPort: 80
