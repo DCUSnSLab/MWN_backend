@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_migrate import Migrate
+from flask_cors import CORS
 from datetime import datetime
 import os
 import logging
@@ -28,6 +29,15 @@ app.wsgi_app = ProxyFix(
     x_host=1,     # X-Forwarded-Host
     x_prefix=1    # X-Forwarded-Prefix
 )
+
+# CORS: 웹 관리자(브라우저)에서 /api/* 엔드포인트 호출을 허용한다.
+# CORS_ORIGINS 환경변수(쉼표 구분)로 허용 출처를 지정하며, 미설정 시 모든 출처를 허용한다.
+# API는 쿠키가 아닌 Authorization 헤더(Bearer 토큰)로 인증하므로 와일드카드 출처도 안전하다.
+_cors_origins_raw = os.environ.get('CORS_ORIGINS', '*').strip()
+_cors_origins = '*' if _cors_origins_raw == '*' else [
+    o.strip() for o in _cors_origins_raw.split(',') if o.strip()
+]
+CORS(app, resources={r"/api/*": {"origins": _cors_origins}})
 
 # Database configuration
 # PostgreSQL connection string

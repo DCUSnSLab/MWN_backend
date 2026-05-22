@@ -90,7 +90,7 @@ mwn_backend/
 | `KMA_SERVICE_KEY` | 기상청 API 인증 키 | 미설정 시 날씨 알림 기능 제한 |
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Firebase 서비스 계정 키 경로 | FCM 발송용 |
 
-선택 변수: `ADMIN_EMAIL`(기본 `snslab@gmail.com`), `ADMIN_NAME`(기본 `시스템 관리자`), `PORT`(기본 5000).
+선택 변수: `ADMIN_EMAIL`(기본 `snslab@gmail.com`), `ADMIN_NAME`(기본 `시스템 관리자`), `PORT`(기본 5000), `CORS_ORIGINS`(웹 관리자용 CORS 허용 출처, 쉼표 구분, 미설정 시 `*`).
 
 ---
 
@@ -108,6 +108,11 @@ mwn_backend/
 ### 외부 의존성 안정화
 - `weather_api.py`: KMA API 호출에 `requests.Session` + `Retry`(3회, 지수 백오프) + `timeout=(5,30)` 적용. API 키를 로그에 노출하던 디버그 `print` 제거.
 - `fcm_utils.py`: `UnregisteredError`/`SenderIdMismatchError`가 발생한 FCM 토큰을 DB에서 자동 무효화(`User.fcm_token=None`).
+
+### 웹 관리자 CORS 지원
+- Flutter Web 웹 관리자(프론트 저장소 `DCUSnSLab/MWN`)가 브라우저에서 `/api/*`를 호출할 수 있도록 `Flask-CORS`를 적용했습니다.
+- `app.py`에서 `/api/*` 경로에만 CORS를 적용하며, 허용 출처는 `CORS_ORIGINS` 환경변수(쉼표 구분, 미설정 시 `*`)로 지정합니다. API는 Bearer 토큰 인증이라 와일드카드 출처도 안전합니다.
+- `requirements.txt`에 `Flask-CORS==4.0.1`이 추가되어 **이미지 재빌드가 필요**합니다(파드 재시작만으로는 미반영).
 
 ### 알려진 버그 수정
 - `weather_alerts.py`: `self.thresholds` AttributeError 수정(legacy 비예보 경로).
