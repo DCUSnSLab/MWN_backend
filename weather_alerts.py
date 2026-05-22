@@ -825,12 +825,15 @@ class WeatherAlertSystem:
             title, body = self._create_weather_alert_message(market.name, alerts, weather_info['checked_hours'])
 
             # FCM 알림 전송
+            # data payload는 메시지 전체 4KB 한계에 포함되므로 전체 alerts
+            # (24시간 예보 × 다중 타입)를 넣으면 "message is too big"으로 전송 실패한다.
+            # 알림 타입 목록만 전달하고 상세는 클라이언트가 앱에서 조회한다.
             import json
             notification_data = {
                 'type': 'weather_alert',
                 'market_id': str(market.id),
                 'market_name': market.name,
-                'alerts': json.dumps(alerts, ensure_ascii=False)
+                'alert_types': json.dumps(list(alerts.keys()), ensure_ascii=False)
             }
 
             return fcm_service.send_notification(
