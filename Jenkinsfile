@@ -51,7 +51,11 @@ spec:
                         remote.password = "${SSH_PASS}"
                         remote.allowAnyHosts = true
 
-                        sshCommand remote: remote, command: "kubectl apply -f /services/mwn/mwn_backend_service_loadbalancer.yaml -n mwn"
+                        // 레포의 manifest를 deploy-server로 전송 후 적용
+                        // (레포가 단일 진실 공급원 - single source of truth)
+                        sshPut remote: remote, from: 'k8s/mwn_backend.yaml', into: '/services/mwn/mwn_backend.yaml'
+                        sshCommand remote: remote, command: "kubectl apply -f /services/mwn/mwn_backend.yaml -n mwn"
+                        // 이미지 태그가 :latest 로 동일하므로 apply 만으로는 갱신되지 않아 명시적 재시작 필요
                         sshCommand remote: remote, command: "kubectl rollout restart deployment/mwn-backend -n mwn"
                     }
                 }
