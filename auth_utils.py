@@ -8,7 +8,7 @@ JWT 토큰 생성, 검증, 데코레이터 등을 포함합니다.
 
 import jwt
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import request, jsonify, current_app
 from models import User
@@ -29,7 +29,7 @@ JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)  # 30일
 
 def generate_tokens(user_id):
     """액세스 토큰과 리프레시 토큰 생성"""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # 액세스 토큰 페이로드
     access_payload = {

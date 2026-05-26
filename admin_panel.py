@@ -12,7 +12,7 @@ from flask_admin.contrib.sqla import ModelView
 from flask_admin.actions import action
 from flask_admin.model.template import EndpointLinkRowAction
 from werkzeug.security import check_password_hash
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from database import db
@@ -532,7 +532,7 @@ class SystemControlView(BaseView):
             # 알림 로그 기록
             from models import MarketAlarmLog
             from database import db
-            from datetime import datetime
+            from datetime import datetime, timezone
 
             alarm_log = MarketAlarmLog(
                 market_id=market.id,
@@ -543,7 +543,7 @@ class SystemControlView(BaseView):
                 success_count=success_count,
                 failure_count=failure_count,
                 weather_data={'type': 'test_notification'},
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
 
             db.session.add(alarm_log)

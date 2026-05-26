@@ -81,7 +81,7 @@ class WeatherAlertSystem:
         from models import Weather
         
         # 최근 2시간 내에 수집된 데이터만 사용 (스케줄러가 매 시간 수집함)
-        cutoff_time = datetime.utcnow() - timedelta(hours=2)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
         
         try:
             with app.app_context():
@@ -945,8 +945,10 @@ class WeatherAlertSystem:
                 return False
                 
             # 1. Cool-down 체크 (6시간)
+            # DB의 created_at은 timezone-naive UTC로 저장되므로, 비교 시 동일 형태로 맞춘다.
             cool_down_hours = 6
-            elapsed = datetime.utcnow() - last_log.created_at
+            now_naive_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            elapsed = now_naive_utc - last_log.created_at
             if elapsed < timedelta(hours=cool_down_hours):
                 return True
                 

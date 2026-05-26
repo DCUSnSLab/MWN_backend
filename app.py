@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_migrate import Migrate
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import logging
 from database import db
@@ -102,7 +102,7 @@ def handle_unexpected_error(e):
 
 @app.route('/health')
 def health_check():
-    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now(timezone.utc).isoformat()})
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -285,7 +285,7 @@ def login():
     
     try:
         # 마지막 로그인 시간 업데이트
-        user.last_login = datetime.utcnow()
+        user.last_login = datetime.now(timezone.utc)
         db.session.commit()
         
         # JWT 토큰 생성
@@ -495,7 +495,7 @@ def update_profile():
                 return jsonify({'message': '업데이트할 정보가 없습니다.'}), 400
 
             # 변경사항 저장
-            current_user.updated_at = datetime.utcnow()
+            current_user.updated_at = datetime.now(timezone.utc)
             db.session.commit()
 
             logger.info(f"Profile updated for user {current_user.email}. Updated fields: {', '.join(updated_fields)}")
@@ -534,7 +534,7 @@ def delete_account():
             # 사용자 비활성화 및 탈퇴 처리
             current_user.is_active = False
             current_user.is_deleted = True
-            current_user.deleted_at = datetime.utcnow()
+            current_user.deleted_at = datetime.now(timezone.utc)
             current_user.deletion_reason = deletion_reason
 
             # 민감 정보 및 기능적 데이터 초기화
@@ -2244,7 +2244,7 @@ def account_deletion_page():
             # 계정 삭제 처리
             user.is_active = False
             user.is_deleted = True
-            user.deleted_at = datetime.utcnow()
+            user.deleted_at = datetime.now(timezone.utc)
             user.deletion_reason = reason if reason else '웹 페이지를 통한 삭제'
 
             # 민감 정보 초기화

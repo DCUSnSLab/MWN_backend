@@ -1,5 +1,5 @@
 from database import db
-from datetime import datetime
+from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class User(db.Model):
@@ -11,8 +11,8 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     phone = db.Column(db.String(20))
     location = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), default='user')  # 'user' or 'admin'
     notification_preferences = db.Column(db.JSON)
@@ -98,7 +98,7 @@ class User(db.Model):
         self.fcm_token = token
         if device_info:
             self.device_info = device_info
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def subscribe_to_topic(self, topic):
         """FCM 주제 구독"""
@@ -106,23 +106,23 @@ class User(db.Model):
             self.fcm_topics = []
         if topic not in self.fcm_topics:
             self.fcm_topics.append(topic)
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
     
     def unsubscribe_from_topic(self, topic):
         """FCM 주제 구독 해제"""
         if self.fcm_topics and topic in self.fcm_topics:
             self.fcm_topics.remove(topic)
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
     
     def enable_fcm(self):
         """FCM 알림 활성화"""
         self.fcm_enabled = True
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def disable_fcm(self):
         """FCM 알림 비활성화"""
         self.fcm_enabled = False
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def can_receive_fcm(self):
         """FCM 알림 수신 가능 여부"""
@@ -151,6 +151,8 @@ class User(db.Model):
             return True
 
         # 현재 시간 가져오기 (또는 지정된 시간 사용)
+        # 주의: 사용자가 입력한 DND 시간(HH:MM)은 운영 컨테이너의 TZ(Asia/Seoul) 기준이므로,
+        #       이 비교만 의도적으로 로컬타임(datetime.now())을 쓴다. 다른 모든 datetime은 UTC.
         if check_time is None:
             check_time = datetime.now()
 
@@ -205,7 +207,7 @@ class User(db.Model):
 
         # 기존 설정에 새로운 설정 병합
         self.do_not_disturb.update(settings)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
         # SQLAlchemy가 JSON 변경을 감지하도록 플래그 설정
         from sqlalchemy.orm.attributes import flag_modified
@@ -218,12 +220,12 @@ class User(db.Model):
     def make_admin(self):
         """관리자 권한 부여"""
         self.role = 'admin'
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def make_user(self):
         """일반 사용자 권한으로 변경"""
         self.role = 'user'
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     @classmethod
     def create_admin(cls, name, email, password, phone=None, location=None):
@@ -246,7 +248,7 @@ class UserMarketInterest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
     notification_enabled = db.Column(db.Boolean, default=True)  # 해당 시장 알림 활성화 여부
     
@@ -309,8 +311,8 @@ class Market(db.Model):
     nx = db.Column(db.Integer)  # 기상청 격자 X 좌표
     ny = db.Column(db.Integer)  # 기상청 격자 Y 좌표
     category = db.Column(db.String(100))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
 
     # 날씨 알림 조건 설정 (JSON 형식)
@@ -367,7 +369,7 @@ class Market(db.Model):
 
         # 기존 조건에 새로운 조건 병합
         self.alert_conditions.update(conditions)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
         # SQLAlchemy가 JSON 변경을 감지하도록 플래그 설정
         from sqlalchemy.orm.attributes import flag_modified
@@ -400,7 +402,7 @@ class DamageStatus(db.Model):
     weather_event = db.Column(db.String(100), nullable=False)  # 태풍, 폭우, 폭설 등
     damage_level = db.Column(db.String(50), nullable=False)    # 경미, 보통, 심각
     description = db.Column(db.Text)
-    reported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reported_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     estimated_recovery_time = db.Column(db.DateTime)
     is_resolved = db.Column(db.Boolean, default=False)
     resolved_at = db.Column(db.DateTime)
@@ -454,7 +456,7 @@ class Weather(db.Model):
     # 메타데이터
     api_type = db.Column(db.String(20), nullable=False)  # 'current' 또는 'forecast'
     location_name = db.Column(db.String(100))  # 지역명
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -510,7 +512,7 @@ class MarketAlarmLog(db.Model):
     # 메타데이터
     forecast_time = db.Column(db.String(50))  # 예보 시간 (예: "11월 06일 15시")
     checked_hours = db.Column(db.Integer, default=24)  # 확인한 예보 시간 범위
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # 관계
     market = db.relationship('Market', backref=db.backref('alarm_logs', lazy='dynamic'))
@@ -547,7 +549,7 @@ class PasswordVerificationAttempt(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    attempted_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    attempted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     success = db.Column(db.Boolean, default=False)
     ip_address = db.Column(db.String(45))  # IPv6 지원
 
@@ -569,7 +571,7 @@ class PasswordVerificationAttempt(db.Model):
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
         recent_attempts = cls.query.filter(
             cls.user_id == user_id,
@@ -596,7 +598,7 @@ class PasswordVerificationAttempt(db.Model):
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
         failure_count = cls.query.filter(
             cls.user_id == user_id,
@@ -644,7 +646,7 @@ class MarketReport(db.Model):
     
     # 메타데이터
     status = db.Column(db.String(20), default='pending')  # pending, resolved
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     resolved_at = db.Column(db.DateTime)
     
     # 관계

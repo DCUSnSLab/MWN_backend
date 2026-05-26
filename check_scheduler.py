@@ -6,7 +6,7 @@ Weather Scheduler 상태 확인 스크립트
 
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 def check_scheduler_status():
     """스케줄러 상태를 확인합니다."""
@@ -81,7 +81,8 @@ def check_scheduler_status():
 
             print(f"\n날씨 데이터 총 개수: {total_weather}개")
             if latest_weather:
-                time_diff = datetime.utcnow() - latest_weather.created_at
+                # latest_weather.created_at은 timezone-naive UTC로 저장되므로 비교를 위해 동일 형태로 맞춘다.
+                time_diff = datetime.now(timezone.utc).replace(tzinfo=None) - latest_weather.created_at
                 minutes_ago = int(time_diff.total_seconds() / 60)
                 print(f"최근 수집 시간: {latest_weather.created_at.strftime('%Y-%m-%d %H:%M:%S')} ({minutes_ago}분 전)")
 
