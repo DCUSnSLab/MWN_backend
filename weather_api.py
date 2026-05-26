@@ -286,15 +286,24 @@ class KMAWeatherAPI:
                     forecast_groups[key]['sky'] = fcst_value
                 elif category == 'LGT':
                     forecast_groups[key]['lightning'] = fcst_value  # 낙뢰
-                    
+                elif category == 'SNO':
+                    # SNO: 적설량(cm). 초단기예보에는 없고 단기예보(getVilageFcst)에서만 제공.
+                    # "적설없음" 같은 문자열이 올 수 있어 안전하게 처리한다.
+                    if fcst_value in ['', '적설없음', '없음', '0']:
+                        forecast_groups[key]['sno'] = 0.0
+                    else:
+                        forecast_groups[key]['sno'] = float(fcst_value)
+
             except ValueError:
                 # 숫자로 변환할 수 없는 경우 기본값 처리
                 if category == 'RN1':
                     forecast_groups[key]['rain_1h'] = 0.0
+                elif category == 'SNO':
+                    forecast_groups[key]['sno'] = 0.0
                 elif category in ['PTY', 'SKY', 'LGT']:
                     forecast_groups[key][{
-                        'PTY': 'pty', 
-                        'SKY': 'sky', 
+                        'PTY': 'pty',
+                        'SKY': 'sky',
                         'LGT': 'lightning'
                     }[category]] = fcst_value
                 else:

@@ -449,6 +449,7 @@ class Weather(db.Model):
     pty = db.Column(db.String(10))      # PTY: 강수형태 (없음(0), 비(1), 비/눈(2), 눈(3), 소나기(4))
     sky = db.Column(db.String(10))      # SKY: 하늘상태 (맑음(1), 구름많음(3), 흐림(4))
     lightning = db.Column(db.String(10))  # LGT: 낙뢰 (없음(0), 있음(1))
+    sno = db.Column(db.Float)           # SNO: 적설량(cm) — 단기예보(getVilageFcst)에서만 제공
     
     # 메타데이터
     api_type = db.Column(db.String(20), nullable=False)  # 'current' 또는 'forecast'
@@ -475,6 +476,7 @@ class Weather(db.Model):
             'pty': self.pty,
             'sky': self.sky,
             'lightning': self.lightning,
+            'sno': self.sno,
             'api_type': self.api_type,
             'location_name': self.location_name,
             'created_at': self.created_at.isoformat() if self.created_at else None

@@ -103,9 +103,9 @@ class WeatherAlertSystem:
                 data = []
                 for f in forecasts:
                     # API 응답 구조와 맞춤
-                    # TODO: Weather 모델에 sno(적설량) 컬럼이 없어 단계 분류가 불가능.
-                    #       컬럼 추가 + 마이그레이션 + weather_api.py 수집 로직 보강 후
-                    #       이 값을 f.sno로 교체할 것.
+                    # SNO는 단기예보(getVilageFcst)에서만 제공된다.
+                    # 현재 weather_scheduler가 초단기예보(getUltraSrtFcst)만 수집하므로
+                    # f.sno 는 대부분 None 이며, 그 경우 pty 기반 알림만 발화한다.
                     data.append({
                         'fcst_date': f.fcst_date,
                         'fcst_time': f.fcst_time,
@@ -113,7 +113,7 @@ class WeatherAlertSystem:
                         'pty': f.pty,
                         'tmp': f.temp,
                         'wsd': f.wind_speed,
-                        'sno': None,
+                        'sno': f.sno,
                     })
                 
                 return {'status': 'success', 'data': data}
@@ -453,15 +453,21 @@ class WeatherAlertSystem:
                                 })
 
                                 # 눈인 경우 별도 확인 (snow_enabled가 True일 때만)
-                                # NOTE: Weather 모델에 적설량(sno) 컬럼이 없어 임계값 비교가 불가능.
-                                #       강수형태가 비/눈(2) 또는 눈(3)이면 알림을 발화한다.
-                                #       정확한 적설량 기반 단계 분류는 sno 컬럼 추가 후 복구할 것.
+                                # 단기예보 미수집 환경에서는 sno 가 None 이라 임계값 비교가 불가능하므로
+                                # pty 기반으로만 발화하고, 단기예보가 들어오면 임계값 비교가 자동 활성화된다.
                                 if thresholds['snow_enabled'] and pty in ['2', '3']:
-                                    all_alerts['snow'].append({
-                                        **alert_item,
-                                        'snow_amount': sno or 0,
-                                        'description': "눈 예보" if pty == '3' else "비/눈 예보"
-                                    })
+                                    snow_threshold = self.default_thresholds['snow_amount']
+                                    has_threshold_data = sno is not None and sno >= snow_threshold
+                                    if has_threshold_data or sno is None:
+                                        all_alerts['snow'].append({
+                                            **alert_item,
+                                            'snow_amount': sno,
+                                            'description': (
+                                                f"적설량 {sno}cm 예상"
+                                                if has_threshold_data
+                                                else ("눈 예보" if pty == '3' else "비/눈 예보")
+                                            )
+                                        })
 
                         # 2. 폭염 확인 (temp_enabled가 True일 때만)
                         if thresholds['temp_enabled'] and tmp and tmp >= thresholds['high_temp']:
