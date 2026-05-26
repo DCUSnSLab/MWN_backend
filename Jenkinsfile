@@ -53,8 +53,10 @@ spec:
 
                         // 레포의 manifest를 deploy-server로 전송 후 적용
                         // (레포가 단일 진실 공급원 - single source of truth)
-                        sshPut remote: remote, from: 'k8s/mwn_backend.yaml', into: '/services/mwn/mwn_backend.yaml'
-                        sshCommand remote: remote, command: "kubectl apply -f /services/mwn/mwn_backend.yaml -n mwn"
+                        // /tmp/ 경유: /services/mwn/ 는 SSH 사용자에게 쓰기 권한이 없어 SFTP PUT 실패.
+                        sshPut remote: remote, from: 'k8s/mwn_backend.yaml', into: '/tmp/mwn_backend.yaml'
+                        sshCommand remote: remote, command: "kubectl apply -f /tmp/mwn_backend.yaml -n mwn"
+                        sshCommand remote: remote, command: "rm -f /tmp/mwn_backend.yaml"
                         // 이미지 태그가 :latest 로 동일하므로 apply 만으로는 갱신되지 않아 명시적 재시작 필요
                         sshCommand remote: remote, command: "kubectl rollout restart deployment/mwn-backend -n mwn"
                     }
