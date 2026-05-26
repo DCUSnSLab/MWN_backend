@@ -47,8 +47,10 @@ instance/*.db
 logs/
 
 # Environment
-.env.local
-.env.*.local
+# .env 에는 평문 비밀(KMA 키 등)이 들어있어 이미지에 포함되면 안 된다.
+# 운영 비밀은 mwn-secret Kubernetes Secret 으로 주입한다.
+.env*
+!.env.example
 
 # Git
 .git/
