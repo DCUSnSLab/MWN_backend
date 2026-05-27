@@ -6,7 +6,8 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-admin_bp = Blueprint('admin', __name__)
+# 'admin' endpoint name은 Flask-Admin 이 이미 사용 중이므로 다른 이름을 쓴다.
+admin_bp = Blueprint('api_admin', __name__)
 
 
 @admin_bp.route('/api/admin/fcm/send', methods=['POST'])
