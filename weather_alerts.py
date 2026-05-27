@@ -9,7 +9,7 @@
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 from weather_api import KMAWeatherAPI
 from models import Market, User, UserMarketInterest, MarketAlarmLog
