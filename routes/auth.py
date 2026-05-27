@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-auth_bp = Blueprint('auth', __name__)
+auth_bp = Blueprint('api_auth', __name__)
 
 
 @auth_bp.route('/api/users', methods=['GET'])

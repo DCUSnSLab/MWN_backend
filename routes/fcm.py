@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-fcm_bp = Blueprint('fcm', __name__)
+fcm_bp = Blueprint('api_fcm', __name__)
 
 
 @fcm_bp.route('/api/fcm/register', methods=['POST'])

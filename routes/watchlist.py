@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-watchlist_bp = Blueprint('watchlist', __name__)
+watchlist_bp = Blueprint('api_watchlist', __name__)
 
 
 @watchlist_bp.route('/api/watchlist', methods=['GET'])

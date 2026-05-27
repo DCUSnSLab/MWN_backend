@@ -2,7 +2,7 @@
 
 from flask import Blueprint, jsonify, redirect, request, url_for
 
-db_viewer_bp = Blueprint('db_viewer', __name__)
+db_viewer_bp = Blueprint('api_db_viewer', __name__)
 
 
 def _require_admin_session():

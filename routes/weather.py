@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-weather_bp = Blueprint('weather', __name__)
+weather_bp = Blueprint('api_weather', __name__)
 
 
 @weather_bp.route('/api/weather/current', methods=['POST'])

@@ -14,7 +14,7 @@ from flask import (
 
 logger = logging.getLogger(__name__)
 
-main_bp = Blueprint('main', __name__)
+main_bp = Blueprint('api_main', __name__)
 
 
 @main_bp.route('/health')

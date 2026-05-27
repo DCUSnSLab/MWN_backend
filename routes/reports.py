@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-reports_bp = Blueprint('reports', __name__)
+reports_bp = Blueprint('api_reports', __name__)
 
 
 @reports_bp.route('/api/reports', methods=['POST'])

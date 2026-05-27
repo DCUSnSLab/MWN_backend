@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-markets_bp = Blueprint('markets', __name__)
+markets_bp = Blueprint('api_markets', __name__)
 
 
 @markets_bp.route('/api/markets', methods=['GET', 'POST'])

@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger(__name__)
 
-alarm_logs_bp = Blueprint('alarm_logs', __name__)
+alarm_logs_bp = Blueprint('api_alarm_logs', __name__)
 
 
 @alarm_logs_bp.route('/api/admin/logs/alerts', methods=['GET'])
