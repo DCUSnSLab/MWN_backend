@@ -61,12 +61,14 @@ if not wait_for_db():
 echo "🗃️ Applying database migrations..."
 export FLASK_APP=app.py
 
+# 이 스크립트는 /bin/sh(dash)로 실행되므로 bash 전용 구문(PIPESTATUS 등)을 쓰지 않는다.
 # set -e 상태에서 upgrade 의 비정상 종료가 스크립트를 즉시 죽이지 않도록 분리 처리.
-# (파이프 뒤 $? 는 tee 의 종료코드이므로 PIPESTATUS[0] 로 flask 의 코드를 본다.)
+# 파이프를 쓰면 $? 가 마지막 명령(tee)의 코드가 되므로, 리다이렉트만 써서 flask 의 코드를 본다.
 set +e
-flask db upgrade 2>&1 | tee /tmp/upgrade_output.log
-UPGRADE_RC=${PIPESTATUS[0]}
+flask db upgrade > /tmp/upgrade_output.log 2>&1
+UPGRADE_RC=$?
 set -e
+cat /tmp/upgrade_output.log
 
 if [ "$UPGRADE_RC" -ne 0 ]; then
     if grep -q "Can't locate revision" /tmp/upgrade_output.log; then
