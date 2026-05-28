@@ -55,61 +55,46 @@ if not wait_for_db():
     exit(1)
 "
 
-# 데이터베이스 마이그레이션 (Flask-Migrate 사용)
-echo "🗃️ Initializing database migration..."
-
-# Flask 앱 경로 설정 (flask db 명령어 사용을 위해 필요)
+# 데이터베이스 마이그레이션 (Flask-Migrate)
+# migrations/ 는 이미지에 포함되어 배포된다. baseline(81fe5d2b22d6) 이후의
+# 리비전을 flask db upgrade 가 순서대로 적용한다.
+echo "🗃️ Applying database migrations..."
 export FLASK_APP=app.py
 
-# migrations 디렉토리가 없으면 초기화
-if [ ! -d "migrations" ]; then
-    echo "  📁 migrations 디렉토리가 없습니다. 마이그레이션 초기화 중..."
-    flask db init
-    echo "  ✅ 마이그레이션 초기화 완료!"
-fi
-
-# 데이터베이스 마이그레이션 버전 확인 시도
-echo "  🔍 데이터베이스 마이그레이션 상태 확인 중..."
-flask db current 2>&1 | tee /tmp/db_current.log
-
-# 마이그레이션 히스토리 오류 처리
-if grep -q "Can't locate revision" /tmp/db_current.log; then
-    echo "  ⚠️  데이터베이스에 이전 마이그레이션 버전이 있지만 파일이 없습니다."
-    echo "  🔄 alembic_version 테이블을 초기화합니다..."
-
-    # alembic_version 테이블 삭제 (Python으로 처리)
-    python -c "
-from app import app, db
-with app.app_context():
-    try:
-        db.engine.execute('DROP TABLE IF EXISTS alembic_version CASCADE;')
-        print('  ✅ alembic_version 테이블 삭제 완료')
-    except Exception as e:
-        print(f'  ⚠️  alembic_version 테이블 삭제 실패 (무시): {e}')
-" || echo "  ℹ️  alembic_version 테이블이 없거나 이미 삭제됨"
-fi
-
-# 마이그레이션 적용 (Auto-migrate는 의도된 변경만 들어가도록 CI/개발 단계에서 수행)
-echo "  🚀 마이그레이션 적용 중..."
+# set -e 상태에서 upgrade 의 비정상 종료가 스크립트를 즉시 죽이지 않도록 분리 처리.
+# (파이프 뒤 $? 는 tee 의 종료코드이므로 PIPESTATUS[0] 로 flask 의 코드를 본다.)
+set +e
 flask db upgrade 2>&1 | tee /tmp/upgrade_output.log
+UPGRADE_RC=${PIPESTATUS[0]}
+set -e
 
-if [ $? -eq 0 ]; then
-    echo "  ✅ 데이터베이스 마이그레이션 완료!"
-else
-    # 업그레이드 실패 시 추가 처리
+if [ "$UPGRADE_RC" -ne 0 ]; then
     if grep -q "Can't locate revision" /tmp/upgrade_output.log; then
-        echo "  ⚠️  마이그레이션 버전 불일치 문제 재시도..."
-
-        # stamp를 사용하여 현재 상태를 head로 설정
-        echo "  🔄 데이터베이스를 현재 코드 상태로 동기화합니다..."
-        flask db stamp head
-
-        echo "  ✅ 데이터베이스 마이그레이션 동기화 완료!"
+        # baseline 도입 이전 운영 DB 에 남은 orphan 리비전(전환 1회성).
+        # orphan 이 있으면 stamp 조차 현재 위치를 해석하지 못하므로, 스키마가 baseline 과
+        # 일치함(검증 완료)을 근거로 alembic_version 을 head 로 직접 교정한 뒤 재적용한다.
+        HEAD_REV=$(flask db heads 2>/dev/null | awk 'NR==1{print $1}')
+        echo "  ⚠️  orphan 리비전 감지 → alembic_version 을 head($HEAD_REV)로 교정"
+        python - "$HEAD_REV" <<'PYEOF'
+import sys
+from app import app, db
+from sqlalchemy import text
+head = sys.argv[1]
+with app.app_context():
+    with db.engine.begin() as conn:
+        conn.execute(text("DELETE FROM alembic_version"))
+        conn.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": head})
+print(f"  ✅ alembic_version → {head} 교정 완료")
+PYEOF
+        flask db upgrade
+        echo "  ✅ 마이그레이션 전환 동기화 완료!"
     else
         echo "  ❌ 마이그레이션 적용 실패"
         cat /tmp/upgrade_output.log
         exit 1
     fi
+else
+    echo "  ✅ 데이터베이스 마이그레이션 완료!"
 fi
 
 # 관리자 계정 생성
