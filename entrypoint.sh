@@ -339,5 +339,8 @@ echo ""
 
 echo "🚀 Starting Flask application with weather scheduler..."
 
-# Flask 애플리케이션 시작 (스케줄러가 자동으로 시작됨)
-exec python app.py
+# Flask 애플리케이션 시작 (gunicorn — 프로덕션 WSGI 서버)
+# 워커를 1개로 고정한다: APScheduler 가 워커 프로세스 안에서 돌기 때문에
+# 워커가 N개면 날씨 수집/알림/FCM 이 N번 중복 실행된다.
+# I/O 바운드(외부 API 호출)이므로 동시성은 스레드로 확보한다.
+exec gunicorn --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:${PORT:-80} app:app
