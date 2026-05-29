@@ -55,10 +55,13 @@ spec:
                         // (레포가 단일 진실 공급원 - single source of truth)
                         // /tmp/ 경유: /services/mwn/ 는 SSH 사용자에게 쓰기 권한이 없어 SFTP PUT 실패.
                         sshPut remote: remote, from: 'k8s/mwn_backend.yaml', into: '/tmp/mwn_backend.yaml'
+                        // backend 이미지를 불변 빌드번호 태그로 치환 후 apply.
+                        // :latest(가변) 대신 :${BUILD_NUMBER}를 박으면 apply 만으로 롤아웃이 트리거되어
+                        // rollout restart 꼼수가 불필요하고, kubectl rollout undo 로 즉시 롤백이 가능하다.
+                        // postgres:15-alpine 은 패턴이 달라 치환되지 않는다.
+                        sshCommand remote: remote, command: "sed -i 's#harbor.cu.ac.kr/mwn/backend:latest#harbor.cu.ac.kr/mwn/backend:${env.BUILD_NUMBER}#g' /tmp/mwn_backend.yaml"
                         sshCommand remote: remote, command: "kubectl apply -f /tmp/mwn_backend.yaml -n mwn"
                         sshCommand remote: remote, command: "rm -f /tmp/mwn_backend.yaml"
-                        // 이미지 태그가 :latest 로 동일하므로 apply 만으로는 갱신되지 않아 명시적 재시작 필요
-                        sshCommand remote: remote, command: "kubectl rollout restart deployment/mwn-backend -n mwn"
                     }
                 }
             }
