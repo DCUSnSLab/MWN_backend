@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from rate_limit import limiter
+
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('api_auth', __name__)
@@ -25,8 +27,9 @@ def get_users():
 
 
 @auth_bp.route('/api/auth/register', methods=['POST'])
+@limiter.limit("5 per minute; 30 per hour")
 def register():
-    """회원가입"""
+    """회원가입 — IP 당 분당 5회, 시간당 30회로 제한 (가입 폭주/계정 열거 방지)."""
     from models import User
     from database import db
     from auth_utils import validate_email, validate_password, generate_tokens
@@ -82,8 +85,9 @@ def register():
 
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10 per minute; 100 per hour")
 def login():
-    """로그인"""
+    """로그인 — IP 당 분당 10회, 시간당 100회로 제한 (브루트포스 완화)."""
     from models import User
     from database import db
     from auth_utils import generate_tokens

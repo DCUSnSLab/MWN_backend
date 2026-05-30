@@ -9,13 +9,13 @@ Weather 테이블에 저장하는 백그라운드 작업을 수행합니다.
 
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from app import app, db
-from models import Market, Weather
+from models import Market, Weather, MarketAlarmLog
 from weather_api import KMAWeatherAPI, convert_to_grid
 from weather_alerts import weather_alert_system
 
@@ -237,21 +237,37 @@ class WeatherScheduler:
         """오래된 날씨 데이터 삭제 (기본 2일)"""
         logger.info(f"오래된 날씨 데이터 삭제 작업 시작 ({days}일 이상 경과)")
         try:
-            from datetime import timedelta
-            from app import app
-            
+            # Weather.created_at 은 naive UTC 로 저장되므로 비교 기준도 naive UTC.
+            # (예전에는 datetime.now() 를 썼는데 컨테이너 TZ=Asia/Seoul 이라 9h 어긋남.)
             with app.app_context():
-                cutoff_date = datetime.now() - timedelta(days=days)
-                
-                # 삭제 대상 조회 및 삭제
+                cutoff_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+
                 deleted_count = Weather.query.filter(Weather.created_at < cutoff_date).delete()
                 db.session.commit()
-                
+
                 logger.info(f"오래된 날씨 데이터 삭제 완료: {deleted_count}개 레코드 삭제됨")
-                
+
         except Exception as e:
             logger.error(f"오래된 데이터 삭제 중 오류: {str(e)}")
             # 롤백은 자동 처리됨 (새 세션)
+
+    def cleanup_old_alarm_logs(self, days=30):
+        """오래된 시장 알림 로그 삭제 (기본 30일).
+
+        시장×시간 비례로 무한 증가하므로 보존기간을 두고 정리한다.
+        """
+        logger.info(f"오래된 알림 로그 삭제 작업 시작 ({days}일 이상 경과)")
+        try:
+            with app.app_context():
+                cutoff_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+
+                deleted_count = MarketAlarmLog.query.filter(MarketAlarmLog.created_at < cutoff_date).delete()
+                db.session.commit()
+
+                logger.info(f"오래된 알림 로그 삭제 완료: {deleted_count}개 레코드 삭제됨")
+
+        except Exception as e:
+            logger.error(f"알림 로그 삭제 중 오류: {str(e)}")
     
     def start(self):
         """스케줄러 시작"""
@@ -288,6 +304,16 @@ class WeatherScheduler:
             replace_existing=True
         )
         logger.info("오래된 데이터 삭제 작업 등록: 매일 03:00")
+
+        # 오래된 알림 로그 삭제 (매일 새벽 3시 30분) — 30일 보존
+        self.scheduler.add_job(
+            func=self.cleanup_old_alarm_logs,
+            trigger=CronTrigger(hour='3', minute='30'),
+            id='alarm_log_cleanup_job',
+            name='오래된 알림 로그 삭제 (매일 03:30, 30일 보존)',
+            replace_existing=True
+        )
+        logger.info("오래된 알림 로그 삭제 작업 등록: 매일 03:30 (30일 보존)")
 
         # 스케줄러 시작
         self.scheduler.start()

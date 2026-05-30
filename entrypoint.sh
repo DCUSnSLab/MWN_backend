@@ -61,6 +61,11 @@ if not wait_for_db():
 echo "🗃️ Applying database migrations..."
 export FLASK_APP=app.py
 
+# init 단계에서 app 을 import 하는 짧은 python -c 블록들이 ephemeral APScheduler 를
+# 띄우지 않도록 한다(app.py 의 스케줄러 기동 게이트가 WERKZEUG_RUN_MAIN!='true' && !=None
+# 일 때 false 로 평가됨). gunicorn 으로 넘어가기 전에 unset 한다.
+export WERKZEUG_RUN_MAIN=false
+
 # 이 스크립트는 /bin/sh(dash)로 실행되므로 bash 전용 구문(PIPESTATUS 등)을 쓰지 않는다.
 # set -e 상태에서 upgrade 의 비정상 종료가 스크립트를 즉시 죽이지 않도록 분리 처리.
 # 파이프를 쓰면 $? 가 마지막 명령(tee)의 코드가 되므로, 리다이렉트만 써서 flask 의 코드를 본다.
@@ -282,43 +287,10 @@ with app.app_context():
         exit(1)
 "
 
-# 헬스체크
-echo "🏥 Running health check..."
-
-# 환경변수에서 포트 가져오기 (기본값: 5000)
-HEALTH_CHECK_PORT=${PORT:-5000}
-
-python -c "
-import os
-from app import app
-import requests
-import time
-import threading
-
-# 환경변수에서 포트 가져오기
-port = int(os.environ.get('PORT', 5000))
-
-def run_app():
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-# Flask 앱을 백그라운드에서 시작
-server_thread = threading.Thread(target=run_app, daemon=True)
-server_thread.start()
-
-# 서버가 시작될 때까지 대기
-time.sleep(3)
-
-try:
-    response = requests.get(f'http://localhost:{port}/health', timeout=5)
-    if response.status_code == 200:
-        print(f'✅ Health check passed on port {port}!')
-    else:
-        print(f'❌ Health check failed with status code: {response.status_code}')
-        exit(1)
-except Exception as e:
-    print(f'❌ Health check failed: {e}')
-    exit(1)
-"
+# 앱 import 스모크 테스트 — gunicorn 부팅 전 import 오류 조기 감지.
+# (k8s startupProbe 가 /health 로 본격 readiness 를 대체하므로 Werkzeug 개발서버를 띄우지 않는다.)
+echo "🏥 Running app import smoke test..."
+python -c "from app import app; print('✅ App import smoke OK')"
 
 echo "🎉 Initialization completed successfully!"
 echo ""
@@ -338,6 +310,9 @@ echo "   - Weather alerts (rain/heat/cold/wind): Every hour at :00"
 echo ""
 
 echo "🚀 Starting Flask application with weather scheduler..."
+
+# gunicorn 워커가 정상적으로 스케줄러를 띄울 수 있도록 init 가드 해제.
+unset WERKZEUG_RUN_MAIN
 
 # Flask 애플리케이션 시작 (gunicorn — 프로덕션 WSGI 서버)
 # 워커를 1개로 고정한다: APScheduler 가 워커 프로세스 안에서 돌기 때문에

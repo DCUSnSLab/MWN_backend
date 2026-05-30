@@ -19,7 +19,24 @@ main_bp = Blueprint('api_main', __name__)
 
 @main_bp.route('/health')
 def health_check():
+    """Liveness probe — 프로세스 살아있음만 보고 DB 는 체크하지 않는다.
+    (DB 일시 장애로 Pod 가 재시작되는 cascading 회피)"""
     return jsonify({'status': 'healthy', 'timestamp': datetime.now(timezone.utc).isoformat()})
+
+
+@main_bp.route('/health/ready')
+def readiness_check():
+    """Readiness probe — DB 접근까지 확인. 실패 시 503 으로 트래픽 차단.
+    livenessProbe 와 분리해 transient DB 장애가 pod 재시작을 유발하지 않도록 한다."""
+    from database import db
+    from sqlalchemy import text
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text('SELECT 1'))
+        return jsonify({'status': 'ready', 'timestamp': datetime.now(timezone.utc).isoformat()})
+    except Exception as e:
+        logger.warning(f"readiness check 실패: {e}")
+        return jsonify({'status': 'not_ready', 'error': 'database unavailable'}), 503
 
 
 @main_bp.route('/uploads/<filename>')

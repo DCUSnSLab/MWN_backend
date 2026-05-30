@@ -10,11 +10,11 @@
 1. 기상청 공공데이터포털에서 서비스키 발급 (https://apihub.kma.go.kr/)
 2. .env 파일에 KMA_SERVICE_KEY 설정
 
-https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0600&nx=55&ny=127&authKey=RS9BlHAdSZevQZRwHQmXLA
-https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0630&nx=55&ny=127&authKey=RS9BlHAdSZevQZRwHQmXLA
+https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0600&nx=55&ny=127&authKey=YOUR_KMA_SERVICE_KEY
+https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0630&nx=55&ny=127&authKey=YOUR_KMA_SERVICE_KEY
 
-https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0600&nx=92&ny=92&authKey=RS9BlHAdSZevQZRwHQmXLA
-https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0630&nx=92&ny=92&authKey=RS9BlHAdSZevQZRwHQmXLA
+https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0600&nx=92&ny=92&authKey=YOUR_KMA_SERVICE_KEY
+https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtFcst?pageNo=1&numOfRows=1000&dataType=XML&base_date=20251017&base_time=0630&nx=92&ny=92&authKey=YOUR_KMA_SERVICE_KEY
 
 대가대 좌표 35.912828, 128.803543
 """

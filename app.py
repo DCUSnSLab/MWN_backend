@@ -40,13 +40,23 @@ _cors_origins = '*' if _cors_origins_raw == '*' else [
 CORS(app, resources={r"/api/*": {"origins": _cors_origins}})
 
 # Database configuration
-# PostgreSQL connection string
-default_db_url = 'postgresql://myuser:mypassword@127.0.0.1:5432/weather_notification'
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', default_db_url)
+# 운영에서는 DATABASE_URL env 로 주입(k8s mwn-secret). 미설정 시 명시적으로 실패시켜
+# 평문 자격증명 default fallback 으로 인한 사고를 막는다.
+_database_url = os.environ.get('DATABASE_URL')
+if not _database_url:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError('DATABASE_URL environment variable is required in production')
+    logger.warning('DATABASE_URL not set; using local SQLite for development')
+    _database_url = 'sqlite:///instance/dev.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = _database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
+    # gunicorn --threads 8 환경에서 동시 처리 8 스레드 + 스케줄러 작업 고려.
+    # 기본 pool_size 5 는 부족하므로 명시.
+    'pool_size': 10,
+    'max_overflow': 5,
 }
 _secret_key = os.environ.get('SECRET_KEY')
 if not _secret_key:
@@ -55,6 +65,15 @@ if not _secret_key:
     logger.warning('SECRET_KEY not set; falling back to insecure development value')
     _secret_key = 'dev-secret-key-DO-NOT-USE-IN-PROD'
 app.config['SECRET_KEY'] = _secret_key
+
+# 세션 쿠키 보안 옵션 (Flask-Admin 세션 보호)
+# - HTTPONLY: JS 접근 차단 (XSS 시 세션 토큰 탈취 방지)
+# - SAMESITE=Lax: CSRF 완화 (외부 사이트 POST 요청에 쿠키 미전송)
+# - SECURE: HTTPS 전용 — 현재 LB 가 HTTP 라 기본 false. HTTPS 도입 시 env 로 true.
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
+
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max limit
 
@@ -69,6 +88,10 @@ app.config['APPLICATION_ROOT'] = os.environ.get('APPLICATION_ROOT', '/')
 # Initialize with app
 db.init_app(app)
 migrate = Migrate(app, db)
+
+# Rate limiter — /api/auth/login, /api/auth/register 에 데코레이터로 적용된다.
+from rate_limit import limiter
+limiter.init_app(app)
 
 # Flask-Admin 초기화 (모델을 import하기 전에 admin_panel을 import)
 from admin_panel import init_admin

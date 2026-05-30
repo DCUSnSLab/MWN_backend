@@ -9,6 +9,7 @@ APScheduler==3.10.4
 Flask-Mail==0.9.1
 gunicorn==21.2.0
 PyJWT==2.8.0
+Flask-Limiter==3.5.0
 psycopg2-binary==2.9.11
 pandas==2.3.3
 openpyxl==3.1.5
