@@ -112,6 +112,9 @@ class WeatherScheduler:
                         if forecast_result['status'] == 'success':
                             forecast_count = len(forecast_result.get('data', []))
                             logger.info(f"  ✅ 예보 데이터 수집 성공 ({forecast_count}시간)")
+                            # KMA getUltraSrtNcst 는 SKY 미반환이라 current.sky 가 NULL.
+                            # 같은 시각의 forecast(getUltraSrtFcst) 가 SKY 를 주므로 복사한다.
+                            self._backfill_current_sky(nx, ny)
                         else:
                             logger.error(f"  ❌ 예보 데이터 수집 실패: {forecast_result['message']}")
                             error_count += 1
@@ -140,6 +143,37 @@ class WeatherScheduler:
             except Exception as e:
                 logger.error(f"날씨 데이터 수집 중 전체 오류: {str(e)}")
     
+    def _backfill_current_sky(self, nx, ny):
+        """방금 저장한 current 행의 sky 를 같은 시각 forecast.sky 로 채운다.
+
+        KMA getUltraSrtNcst(초단기실황) 는 SKY 카테고리를 반환하지 않아 current.sky 가
+        항상 NULL 인데, getUltraSrtFcst(초단기예보) 응답에는 SKY 가 들어있다.
+        두 API 가 직전에 모두 호출되어 같은 시각(base_date/base_time == fcst_date/fcst_time)
+        의 forecast 행이 있으므로 그 SKY 를 current 에 복사한다.
+        매칭되는 forecast 가 없으면(예: 다음 정각 이전 forecast 만 있는 경우) NULL 유지.
+        """
+        try:
+            cur = Weather.query.filter_by(
+                api_type='current', nx=nx, ny=ny
+            ).order_by(Weather.created_at.desc()).first()
+            if not cur or cur.sky:
+                return
+
+            fc = Weather.query.filter(
+                Weather.api_type == 'forecast',
+                Weather.nx == nx, Weather.ny == ny,
+                Weather.fcst_date == cur.base_date,
+                Weather.fcst_time == cur.base_time,
+                Weather.sky.isnot(None),
+            ).order_by(Weather.base_date.desc(), Weather.base_time.desc()).first()
+
+            if fc and fc.sky:
+                cur.sky = fc.sky
+                db.session.commit()
+        except Exception as e:
+            logger.warning(f"current.sky 합성 실패 (nx={nx}, ny={ny}): {e}")
+            db.session.rollback()
+
     def collect_weather_for_market(self, market_id):
         """특정 시장의 날씨 데이터 수집"""
         if not self.weather_api:
