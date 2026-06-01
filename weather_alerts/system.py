@@ -206,6 +206,18 @@ class WeatherAlertSystem:
 
                 logger.info(f"{len(markets_with_interest)}개 시장의 날씨 조건 확인 중...")
 
+                # 좌표 단위 prefetch — 278 시장이 98 좌표에 집중되므로 같은 (nx,ny)
+                # 의 forecast 를 매 시장마다 다시 조회하는 중복(=N배 DB 호출)을 제거한다.
+                # 임계값은 시장별로 달라도 평가 입력(forecast) 은 좌표 단위로 동일.
+                coord_forecasts: Dict[Any, Dict[str, Any]] = {}
+                for market in markets_with_interest:
+                    coord_key = (market.nx, market.ny)
+                    if coord_key not in coord_forecasts:
+                        coord_forecasts[coord_key] = self.repository.fetch_forecast(market)
+                logger.info(
+                    f"좌표 prefetch: {len(coord_forecasts)}개 (시장 {len(markets_with_interest)}개)"
+                )
+
                 active_market_alerts = []
                 user_batches: Dict[Any, Dict[str, Any]] = {}
 
@@ -213,7 +225,10 @@ class WeatherAlertSystem:
 
                 for market in markets_with_interest:
                     try:
-                        weather_info = self.evaluator.evaluate_all_conditions(market, hours)
+                        weather_info = self.evaluator.evaluate_all_conditions(
+                            market, hours,
+                            forecast_data=coord_forecasts.get((market.nx, market.ny)),
+                        )
                         checked_count += 1
 
                         if not weather_info.get('has_alerts'):

@@ -77,8 +77,17 @@ class AlertEvaluator:
             logger.error(f"시장 {market.name}의 비 예보 확인 중 오류: {e}")
             return {'has_rain': False, 'error': str(e)}
 
-    def evaluate_all_conditions(self, market: Market, hours: int = None) -> Dict[str, Any]:
-        """비/폭염/한파/강풍/눈 — 시장별 임계값 반영해서 모두 평가."""
+    def evaluate_all_conditions(
+        self,
+        market: Market,
+        hours: int = None,
+        forecast_data: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """비/폭염/한파/강풍/눈 — 시장별 임계값 반영해서 모두 평가.
+
+        forecast_data 가 주어지면 fetch_forecast 호출을 생략한다(같은 좌표 다중 시장
+        평가 시 호출자가 좌표 단위 prefetch 한 결과를 공유하기 위함).
+        """
         if not self.repository.weather_api:
             return {'has_alerts': False, 'error': 'Weather API not available'}
 
@@ -91,7 +100,8 @@ class AlertEvaluator:
             return {'has_alerts': False, 'message': '알림이 비활성화되어 있습니다.'}
 
         try:
-            forecast_data = self.repository.fetch_forecast(market)
+            if forecast_data is None:
+                forecast_data = self.repository.fetch_forecast(market)
 
             if forecast_data.get('status') != 'success':
                 error_msg = forecast_data.get('message', 'Failed to get forecast data')

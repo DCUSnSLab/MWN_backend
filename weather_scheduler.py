@@ -9,6 +9,7 @@ Weather 테이블에 저장하는 백그라운드 작업을 수행합니다.
 
 import os
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -81,47 +82,55 @@ class WeatherScheduler:
                 error_count = 0
                 api_call_count = 0
 
-                # 고유한 nx, ny 좌표에 대해서만 날씨 데이터 수집
-                for (nx, ny), market_group in coordinate_groups.items():
-                    try:
-                        # 대표 시장 (첫 번째 시장)
-                        representative_market = market_group[0]
-                        market_names = ', '.join([m.name for m in market_group[:3]])
-                        if len(market_group) > 3:
-                            market_names += f" 외 {len(market_group) - 3}개"
+                def _collect_one(item):
+                    """단일 좌표 수집 — ThreadPoolExecutor 워커가 호출.
 
-                        logger.info(f"격자 좌표 ({nx}, {ny}) - {len(market_group)}개 시장: {market_names}")
+                    각 스레드는 자체 app_context 안에서 DB·API 를 사용한다
+                    (Flask-SQLAlchemy 세션이 스레드 로컬). 결과는
+                    (nx, ny, ok, calls) 튜플로 돌려준다.
+                    """
+                    (nx, ny), market_group = item
+                    representative_market = market_group[0]
+                    market_names = ', '.join([m.name for m in market_group[:3]])
+                    if len(market_group) > 3:
+                        market_names += f" 외 {len(market_group) - 3}개"
+                    location_name = (
+                        f"격자({nx}, {ny}) - {representative_market.name} "
+                        f"외 {len(market_group)-1}개"
+                    )
+                    calls = 0
+                    with app.app_context():
+                        try:
+                            current_result = self.weather_api.get_current_weather(nx, ny, location_name)
+                            calls += 1
+                            if current_result.get('status') != 'success':
+                                logger.error(f"  ❌ ({nx},{ny}) 현재 날씨 실패: {current_result.get('message')}")
+                                return (nx, ny, False, calls)
 
-                        # 현재 날씨 조회
-                        location_name = f"격자({nx}, {ny}) - {representative_market.name} 외 {len(market_group)-1}개"
-                        current_result = self.weather_api.get_current_weather(nx, ny, location_name)
-                        api_call_count += 1
+                            forecast_result = self.weather_api.get_forecast_weather(nx, ny, location_name)
+                            calls += 1
+                            if forecast_result.get('status') != 'success':
+                                logger.error(f"  ❌ ({nx},{ny}) 예보 실패: {forecast_result.get('message')}")
+                                return (nx, ny, False, calls)
 
-                        if current_result['status'] == 'success':
-                            logger.info(f"  ✅ 현재 날씨 수집 성공")
+                            self._backfill_current_sky(nx, ny)
+                            logger.info(f"  ✅ ({nx},{ny}) {len(market_group)}개 시장: {market_names}")
+                            return (nx, ny, True, calls)
+                        except Exception as e:
+                            logger.error(f"  ❌ ({nx},{ny}) 처리 오류: {e}")
+                            return (nx, ny, False, calls)
+
+                # KMA API 가 IO 바운드라 thread pool 로 충분. max_workers 는 KMA 동시
+                # 연결 부담을 고려해 보수적으로 10 (98 좌표 → 약 10 배치).
+                with ThreadPoolExecutor(max_workers=10) as ex:
+                    futures = [ex.submit(_collect_one, item) for item in coordinate_groups.items()]
+                    for fut in as_completed(futures):
+                        nx, ny, ok, calls = fut.result()
+                        api_call_count += calls
+                        if ok:
                             success_count += 1
                         else:
-                            logger.error(f"  ❌ 현재 날씨 수집 실패: {current_result['message']}")
                             error_count += 1
-                            continue
-
-                        # 예보 데이터 조회
-                        forecast_result = self.weather_api.get_forecast_weather(nx, ny, location_name)
-                        api_call_count += 1
-
-                        if forecast_result['status'] == 'success':
-                            forecast_count = len(forecast_result.get('data', []))
-                            logger.info(f"  ✅ 예보 데이터 수집 성공 ({forecast_count}시간)")
-                            # KMA getUltraSrtNcst 는 SKY 미반환이라 current.sky 가 NULL.
-                            # 같은 시각의 forecast(getUltraSrtFcst) 가 SKY 를 주므로 복사한다.
-                            self._backfill_current_sky(nx, ny)
-                        else:
-                            logger.error(f"  ❌ 예보 데이터 수집 실패: {forecast_result['message']}")
-                            error_count += 1
-
-                    except Exception as e:
-                        logger.error(f"격자 좌표 ({nx}, {ny}) 처리 중 오류: {str(e)}")
-                        error_count += 1
 
                 # 수집 결과 요약
                 logger.info("=" * 60)
