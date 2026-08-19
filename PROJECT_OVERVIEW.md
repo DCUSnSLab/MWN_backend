@@ -119,9 +119,77 @@ mwn_backend/
 - `weather_alerts.py`: 적설량 알림이 영구 미발화하던 문제를 강수형태(`pty`) 기반으로 우회. **근본 해결은 미완** — 아래 TODO 참조.
 
 ### 남은 개선 항목 (TODO)
-- **`Weather.sno`(적설량) 컬럼 부재**: 모델에 컬럼이 없어 적설량 단계 분류가 불가능. 컬럼 추가 + 마이그레이션 + `weather_api.py` 수집 로직 보강이 필요합니다. (`weather_alerts.py`의 `_get_forecast_from_db` 내 TODO 주석 참조)
-- 에러 응답에 `str(e)`(내부 스택트레이스) 노출 — 30+ 라우트.
-- `request.get_json` robust 파싱 패턴이 미적용된 라우트 다수.
-- 모델 전반의 timezone-naive `datetime` 사용.
-- `app.py`(약 2300줄), `weather_alerts.py`(약 1400줄) 모놀리식 구조 → Blueprint/책임 분리 권장.
-- `config.py`는 어디서도 import되지 않는 dead code.
+> 아래 항목 대부분은 **섹션 7(2026-06 세션)에서 해소**되었습니다. 현행 TODO는 섹션 7 마지막을 참조하세요.
+
+- ~~**`Weather.sno`(적설량) 컬럼 부재**~~ → 컬럼 추가 완료(T15). 단 값 수집은 단기예보 도입 후 가능(섹션 7 참조).
+- ~~에러 응답에 `str(e)` 노출~~ → 전역 `handle_unexpected_error` 로 표준 응답 통일.
+- ~~`request.get_json` robust 파싱~~ → `silent=True, force=True` 패턴 일괄 적용.
+- ~~모델 전반의 timezone-naive `datetime`~~ → `datetime.now(timezone.utc)` 전환(T16).
+- ~~`app.py`(2300줄), `weather_alerts.py`(1400줄) 모놀리식~~ → Blueprint 10개 분리(T17) + `weather_alerts/` 패키지 9모듈 분리(T18).
+
+---
+
+## 7. 운영 안정화·최적화 이력 (2026-06 세션)
+
+### 7.1 구조 리팩토링
+- **T18 `weather_alerts` 패키지 분리** (`98b5192`): 1,420줄 단일 모듈 → 책임별 9개 모듈
+  (`thresholds` / `messages` / `repository` / `evaluator` / `dispatcher` / `alarm_logger` / `system` / `facade` / `__init__`).
+  외부 인터페이스(`WeatherAlertSystem`, `weather_alert_system`, 모듈 레벨 함수 5개) 100% 보존 — 동작 변경 없음.
+
+### 7.2 마이그레이션 시스템 정상화 (`c059717`, `8207ca0`)
+- `migrations/`를 git·이미지에 포함. **baseline `81fe5d2b22d6`** (8개 테이블·FK·인덱스 전체) 생성.
+  모델 ↔ 운영 DB 간 drift 0 확인 후 stamp.
+- `entrypoint.sh`가 매 부팅 `flask db init` 하던 동작 제거. SQLAlchemy 2.x 비호환 `db.engine.execute()` 핵 제거.
+- **주의**: k8s가 `command: ["/bin/sh", ...]`로 셸을 강제하므로 `entrypoint.sh`에 **bash 전용 구문 사용 금지**
+  (`${PIPESTATUS[0]}` 사용 시 dash에서 "Bad substitution" → CrashLoopBackOff 발생 이력).
+
+### 7.3 배포·운영 안정성 (`cece845`, `bbfff02`)
+- **Recreate 전략**: postgres가 같은 Pod의 RWO PVC를 쓰므로 RollingUpdate는 볼륨 마운트 충돌로 롤아웃이 막힘.
+- **헬스 프로브**: backend startup/readiness/liveness + postgres `pg_isready`.
+- **gunicorn 전환**: Werkzeug 개발서버 → `gunicorn --workers 1 --threads 8`.
+  **워커 1개 고정 필수** — APScheduler가 워커 프로세스 안에서 돌아 N개면 알림이 N번 중복 발송됨.
+- **이미지 버전 핀**: 배포 시 `:latest` → `:${BUILD_NUMBER}` sed 치환. `kubectl rollout undo`로 롤백 가능.
+
+### 7.4 보안·신뢰성 강화 (`8a92021`)
+- 세션 쿠키 `HttpOnly` + `SameSite=Lax` (`SESSION_COOKIE_SECURE`는 HTTPS 도입 시 env로 활성).
+- **Flask-Limiter** 도입: `/api/auth/login` 10/min·100/h, `/api/auth/register` 5/min·30/h.
+- DB 풀 `pool_size=10, max_overflow=5` (threads=8 대응).
+- `MarketAlarmLog` 30일 보존 정리잡(매일 03:30) 추가 — 무한 증가 방지.
+- `cleanup_old_weather_data`의 TZ 버그 수정(naive KST → naive UTC, cutoff가 9h 어긋나던 문제).
+- **`/health`(liveness, DB 미확인) + `/health/ready`(readiness, DB `SELECT 1`) 분리** — transient DB 장애로 Pod가 재시작되는 cascading 회피.
+
+### 7.5 `current.sky` 합성 (`c10b1fb`)
+- KMA `getUltraSrtNcst`(초단기실황)는 **SKY 카테고리를 반환하지 않아** `current.sky`가 항상 NULL이었음.
+- 같은 시각 `getUltraSrtFcst`(초단기예보)의 SKY를 복사하는 `_backfill_current_sky()` 추가.
+- 기존 6,369행은 일회성 SQL backfill (6,271행=98.5% 충전).
+
+### 7.6 성능 최적화 (`df481c1`)
+| 항목 | Before | After |
+|---|---|---|
+| forecast 조회 인덱스 | `idx_weather_lookup`(base_*) — fcst_* 패턴 미적중 | **`idx_weather_forecast_fcst`** partial index 신설 (마이그레이션 `2a9731ed9d40`) |
+| 알림 평가 DB 호출 | 278 시장 × 1회 | **98 좌표 × 1회** (좌표 단위 prefetch, **65%↓**) |
+| 날씨 수집 시간 | 직렬 ~50초 | **8.78초** (ThreadPoolExecutor 10 워커, **~5.7배**) |
+
+### 7.7 현행 TODO (다음 작업자용)
+1. **다중 기상 소스 확장** — 후보 조사·가용성 테스트 완료. KMA apihub 예특보 카테고리 5개 sub-tab 확인:
+   - ★★★ **기상특보** `typ01/url/wrn_now_data_new.php` — 공식 발효 특보 직접 인용 (임계 기반보다 신뢰도 우위)
+   - ★★★ **영향예보** `typ01/url/ifs_fct_pstt.php` — KMA 공식 위험수준(관심~위험). 현행 33°C/-12°C 자체 임계를 대체 가능
+   - ★★★ **단기예보** `typ02/openApi/VilageFcstInfoService_2.0/getVilageFcst` — **POP(강수확률)·SNO(적설량)** 확보. 현재 두 필드가 대부분 NULL인 직접 원인
+   - ★★ **중기예보** `MidFcstInfoService/getMidLandFcst`·`getMidTa` — 3~10일 outlook (regId 매핑 필요)
+   - ★★ **Open-Meteo** — 무키·무료, 라이브 테스트 200 OK 확인 (10일 hourly + 대기질). 교차검증용
+   - ★ **예·특보 구역정보** `FcstZoneInfoService/getFcstZoneCd` — 좌표→regId 매핑 보조
+   - **선행 조건**: KMA apihub에서 각 그룹 **활용신청** 필요 (현재 키는 초단기실황·초단기예보만 승인됨 → 나머지는 403).
+2. **노출된 KMA 키 회전** — `example_current_weather.py`의 평문 키는 redact 완료(`8a92021`)했으나
+   **git history에는 잔존**. 키 회전 + `git filter-repo`로 history 재작성 + force-push 필요(협업자 영향 있어 보류 중).
+3. **LoadBalancer `/health` 가로채기** — nginx가 `/health`를 직접 `ok`로 응답해 백엔드까지 도달하지 않음.
+   외부에서 본 `/health`는 백엔드 상태와 무관하게 항상 200. k8s 프로브는 Pod 직접 접근이라 영향 없음.
+4. **postgres 사이드카 조기 재시작** — 과거 모든 Pod에서 부팅 직후 1회 clean-exit 재시작이 관측되었으나,
+   Recreate + 프로브 도입 후 소실됨(restartCount=0). 근본 원인 미규명 — 재발 시 probe 설정 점검.
+5. `app.py`의 `db.create_all()`은 gunicorn 환경에서 미실행되는 dead code (마이그레이션이 스키마 권위).
+6. `config.py`는 어디서도 import되지 않는 dead code.
+
+### 7.8 운영 환경 현황 (2026-06 기준)
+- **최종 배포**: 빌드 #136, 이미지 `harbor.cu.ac.kr/mwn/backend:136`
+- **DB 스키마 버전**: alembic `2a9731ed9d40`
+- **데이터**: 시장 278개(고유 좌표 98개), 사용자 33명
+- **스케줄러 잡 4종**: 날씨수집(매시 45분) / 알림(매시 정각) / 날씨데이터 정리(03:00) / 알림로그 정리(03:30)
